@@ -1,0 +1,122 @@
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+body {
+  font-family: "Space Grotesk", sans-serif;
+  background: #0a0b0d;
+  color: #f4f5f3;
+  overscroll-behavior: none;
+}
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+input,
+button {
+  font-family: inherit;
+}
+
+@keyframes scrIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pulseDot {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* The page is the dark studio backdrop; the device frame floats in it on desktop. */
+.page {
+  min-height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: radial-gradient(1200px 700px at 50% -10%, #202329 0%, #131417 55%, #0d0e10 100%);
+}
+
+.device {
+  position: relative;
+  width: 414px;
+  height: 868px;
+  background: #000;
+  border-radius: 58px;
+  padding: 12px;
+  box-shadow: 0 40px 90px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.04);
+}
+
+.screen {
+  position: relative;
+  width: 390px;
+  height: 844px;
+  background: #0a0b0d;
+  border-radius: 46px;
+  overflow: hidden;
+}
+
+/* On real phones (or any narrow viewport) the device IS the frame:
+   drop the studio chrome and let the app fill the screen edge to edge. */
+@media (max-width: 480px), (max-height: 720px) and (max-width: 900px) {
+  .page {
+    padding: 0;
+    background: #0a0b0d;
+    align-items: stretch;
+    /* Anchor to the viewport so the percentage-height children below resolve.
+       Without a definite height here, `.device`/`.screen` height:100% collapse to
+       0 and the absolutely-positioned screens render blank (black). dvh tracks
+       mobile browser chrome; vh is the fallback for webviews without dvh. */
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+  }
+  .device {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+  .screen {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+}

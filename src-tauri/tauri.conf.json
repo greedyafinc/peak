@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Peak",
+  "version": "0.1.0",
+  "identifier": "com.greedyafinc.peak",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1430",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Peak",
+        "width": 460,
+        "height": 920,
+        "minWidth": 380,
+        "minHeight": 720,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "HealthcareFitness",
+    "shortDescription": "Athletic progress tracker",
+    "longDescription": "Peak — track workouts, a muscle-strength heat map, athleticism metrics, an AI coach, and milestone-based goals.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

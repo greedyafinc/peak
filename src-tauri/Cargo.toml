@@ -1,0 +1,21 @@
+[package]
+name = "peak"
+version = "0.1.0"
+description = "Peak — athletic progress tracker"
+authors = ["greedyafinc"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# The `_lib` suffix avoids a name collision with the binary on Windows,
+# and is required for the mobile (cdylib) entry point.
+[lib]
+name = "peak_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
