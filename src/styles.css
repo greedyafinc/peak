@@ -24,6 +24,18 @@ input,
 button {
   font-family: inherit;
 }
+/* Strip the native number-input spinner arrows — they sit on the right edge and
+   collide with our absolutely-positioned unit labels (cm / ft / in / kg / %). */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
 
 @keyframes scrIn {
   from {

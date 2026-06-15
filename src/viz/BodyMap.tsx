@@ -1,6 +1,10 @@
-import { type Muscle } from "../model";
 import { heat } from "../theme";
 import { FRONT, BACK } from "../data/bodyGeometry";
+
+// A muscle region the heat map can render: an SVG key + a 0–100 heat score.
+// `untested` regions render neutral (no score). Decoupled from the data taxonomy
+// (§2.1): the caller maps MuscleGroup → SVG key via MUSCLE_TO_SVG.
+export type BodyMuscle = { id: string; score: number; untested?: boolean };
 
 // Anatomical muscle heat map — full-body silhouette + per-muscle outlines reconstructed
 // from the user's life-benchmark assets, filled by strength (cold teal → hot red), with
@@ -11,7 +15,7 @@ export function BodyMap({
   onSelect,
   view,
 }: {
-  muscles: Muscle[];
+  muscles: BodyMuscle[];
   selected: string | null;
   onSelect: (id: string) => void;
   view: "front" | "back";
@@ -27,12 +31,12 @@ export function BodyMap({
         const d = body.muscles[m.id];
         if (!d) return null;
 
-        const color = heat(m.score);
+        const color = m.untested ? "#23262d" : heat(m.score);
         const isSel = selected === m.id;
         const dim = selected != null && !isSel;
         const glow = isSel
-          ? `drop-shadow(0 0 9px ${color})`
-          : m.score >= 78
+          ? `drop-shadow(0 0 9px ${m.untested ? "#5aa9ff" : color})`
+          : !m.untested && m.score >= 78
             ? `drop-shadow(0 0 5px ${color}aa)`
             : "none";
 

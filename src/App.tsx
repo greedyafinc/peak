@@ -1,24 +1,25 @@
 import { PeakProvider, usePeak } from "./store";
 import { StatusBar } from "./components/StatusBar";
 import { BottomNav } from "./components/BottomNav";
-import { ActionSheet } from "./components/ActionSheet";
-import { LogSheet, GoalSheet } from "./components/CreateSheets";
-import { Feed } from "./screens/Feed";
+import { Onboarding } from "./screens/Onboarding";
+import { Score } from "./screens/Score";
 import { Body } from "./screens/Body";
-import { Coach } from "./screens/Coach";
-import { Goals } from "./screens/Goals";
+import { Log } from "./screens/Log";
+import { Improve } from "./screens/Improve";
+import { LogSheet, BenchmarkSheet, GoalSheet } from "./components/Sheets";
 
 function Screens() {
-  const { tab } = usePeak();
+  const { tab, data } = usePeak();
+  if (!data.onboarded) return <Onboarding />;
   switch (tab) {
-    case "feed":
-      return <Feed />;
+    case "score":
+      return <Score />;
     case "body":
       return <Body />;
-    case "coach":
-      return <Coach />;
-    case "goals":
-      return <Goals />;
+    case "log":
+      return <Log />;
+    case "improve":
+      return <Improve />;
   }
 }
 
@@ -29,8 +30,8 @@ function Shell() {
         <div className="screen">
           <StatusBar />
           <Screens />
-          <ActionSheet />
           <LogSheet />
+          <BenchmarkSheet />
           <GoalSheet />
           <BottomNav />
         </div>

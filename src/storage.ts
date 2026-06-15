@@ -9,7 +9,7 @@
 // Nothing here ever talks to a network. The web path is synchronous (no first
 // paint flash); the native path loads asynchronously and is awaited on mount.
 
-const KEY = "peak.appdata.v1";
+const KEY = "peak.peakdata.v3";
 const STORE_FILE = "peak.json";
 
 function isTauri(): boolean {

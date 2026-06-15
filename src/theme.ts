@@ -38,7 +38,7 @@ export function heat(s: number): string {
   return "#3f54a8";
 }
 
-import type { WorkoutType } from "./model";
+import type { WorkoutType } from "./types";
 
 // Each workout type owns an accent — derived here so a freshly logged session
 // picks up the right color without storing it on every record.

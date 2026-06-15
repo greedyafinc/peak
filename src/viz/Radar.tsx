@@ -1,9 +1,11 @@
-import type { Metric } from "../model";
 import { mono } from "../theme";
 
-// Six-axis athleticism radar (Strength, Power, Speed, Stamina, Mobility, Balance).
-// Driven by the user's stored metrics rather than a hard-coded constant.
-export function Radar({ metrics }: { metrics: Metric[] }) {
+// One axis of the capability radar: a short label + a 0–100 value.
+export type RadarAxis = { abbr: string; val: number };
+
+// Multi-axis capability radar. Driven by the dimension rollups (build-relative
+// percentiles ×100), not a hard-coded constant.
+export function Radar({ metrics }: { metrics: RadarAxis[] }) {
   const labels = metrics.map((m) => m.abbr);
   const vals = metrics.map((m) => m.val);
   const cx = 130;
