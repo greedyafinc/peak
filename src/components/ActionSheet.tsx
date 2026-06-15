@@ -15,11 +15,12 @@ export function ActionSheet() {
 
   const close = () => s.set({ sheet: false });
   const items: SheetItem[] = [
-    { label: "Gym Session", desc: "Log lifts, sets & PRs", color: "#c6ff3d", iconBg: "rgba(198,255,61,0.14)", shape: "4px", onClick: () => s.set({ sheet: false, tab: "feed" }) },
-    { label: "Cardio", desc: "Run, ride, row or swim", color: "#3dffb0", iconBg: "rgba(61,255,176,0.14)", shape: "50%", onClick: () => s.set({ sheet: false, tab: "feed" }) },
-    { label: "Sport", desc: "Track a game or session", color: "#ff8a3d", iconBg: "rgba(255,138,61,0.14)", shape: "4px", onClick: () => s.set({ sheet: false, tab: "feed" }) },
+    { label: "Gym Session", desc: "Log lifts, sets & PRs", color: "#c6ff3d", iconBg: "rgba(198,255,61,0.14)", shape: "4px", onClick: () => s.set({ sheet: false, logType: "Gym" }) },
+    { label: "Cardio", desc: "Run, ride, row or swim", color: "#3dffb0", iconBg: "rgba(61,255,176,0.14)", shape: "50%", onClick: () => s.set({ sheet: false, logType: "Cardio" }) },
+    { label: "Sport", desc: "Track a game or session", color: "#ff8a3d", iconBg: "rgba(255,138,61,0.14)", shape: "4px", onClick: () => s.set({ sheet: false, logType: "Sport" }) },
+    { label: "Mobility", desc: "Stretch, recover & flow", color: "#5aa9ff", iconBg: "rgba(90,169,255,0.14)", shape: "4px", onClick: () => s.set({ sheet: false, logType: "Mobility" }) },
     { label: "Ask the AI Coach", desc: "Build a plan from your goals", color: "#5aa9ff", iconBg: "rgba(90,169,255,0.14)", shape: "50%", onClick: () => s.set({ sheet: false, tab: "coach", coachTab: "chat" }) },
-    { label: "Set a Goal", desc: "Pick a milestone-based mission", color: "#c6ff3d", iconBg: "rgba(198,255,61,0.14)", shape: "4px", onClick: () => s.set({ sheet: false, tab: "goals" }) },
+    { label: "Set a Goal", desc: "Pick a milestone-based mission", color: "#c6ff3d", iconBg: "rgba(198,255,61,0.14)", shape: "4px", onClick: () => s.set({ sheet: false, goalOpen: true }) },
   ];
 
   return (

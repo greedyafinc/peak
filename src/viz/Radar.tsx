@@ -1,13 +1,16 @@
-import { RADAR } from "../data";
+import type { Metric } from "../model";
 import { mono } from "../theme";
 
 // Six-axis athleticism radar (Strength, Power, Speed, Stamina, Mobility, Balance).
-export function Radar() {
-  const { labels, vals } = RADAR;
+// Driven by the user's stored metrics rather than a hard-coded constant.
+export function Radar({ metrics }: { metrics: Metric[] }) {
+  const labels = metrics.map((m) => m.abbr);
+  const vals = metrics.map((m) => m.val);
   const cx = 130;
   const cy = 128;
   const rad = 84;
-  const ang = (i: number) => ((-90 + i * 60) * Math.PI) / 180;
+  const n = vals.length || 1;
+  const ang = (i: number) => ((-90 + i * (360 / n)) * Math.PI) / 180;
   const pt = (i: number, r: number): [number, number] => [cx + Math.cos(ang(i)) * r, cy + Math.sin(ang(i)) * r];
   const ring = (f: number) => vals.map((_, i) => pt(i, rad * f).join(",")).join(" ");
   const dataPts = vals.map((v, i) => pt(i, (rad * v) / 100).join(",")).join(" ");

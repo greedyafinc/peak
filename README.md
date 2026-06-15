@@ -28,9 +28,26 @@ Five surfaces, switched from the bottom nav (+ a center **+** action sheet):
 - **Goals** — milestone-based missions: a primary-goal hero with a large milestone ladder (completed steps
   check off, the current one glows, upcoming ones are dim numbered nodes) plus all goals with their own tracks.
 
-The center **+** opens a "Start something" action sheet (gym / cardio / sport / ask the coach / set a goal).
+The center **+** opens a "Start something" action sheet — and these actually create data: **log a
+gym / cardio / sport session** (a bottom-sheet form appends it to your Feed and nudges the streak &
+weekly volume), or **set a goal** (name, category, icon, milestones). On the Body screen you can edit
+any muscle's score with −/+ (which live-updates the heat map, Peak Score, symmetry & radar); on Goals
+you tap a milestone node to mark progress; Coach chat is remembered.
 
-All data is realistic authored sample content (`src/data.ts`) — easy to swap for a real backend.
+## Data — stored on device
+
+Nothing is hard-coded into the screens and nothing leaves the device. All of a user's data lives in a
+single JSON document persisted **on-device**:
+
+- **Native (desktop / iOS / Android)** → the official [`tauri-plugin-store`](https://tauri.app), which
+  writes the document into the per-platform app-data directory (registered in `src-tauri/src/lib.rs`,
+  permitted via `src-tauri/capabilities/default.json`).
+- **Web (`npm run dev`)** → `localStorage`, which is still on-device for the webview.
+
+The backend is chosen at runtime (`src/storage.ts`). Authored sample content (`src/seed.ts`) seeds the
+store **once** on first run; after that the on-device copy is the source of truth. A **Reset sample
+data** control at the bottom of Goals re-seeds it. The data model and derived values (Peak Score,
+symmetry, volume) live in `src/model.ts`.
 
 ## Stack
 
@@ -38,7 +55,8 @@ All data is realistic authored sample content (`src/data.ts`) — easy to swap f
 |-------|------|
 | Shell | Tauri 2 (Rust), desktop + mobile (`mobile_entry_point` in `src-tauri/src/lib.rs`) |
 | Frontend | React 18 + TypeScript + Vite |
-| State | A small React context store (`src/store.tsx`) |
+| State | A small React context store (`src/store.tsx`), hydrated from device storage |
+| Persistence | `tauri-plugin-store` (native) / `localStorage` (web) via `src/storage.ts` |
 | Visualizations | Hand-built React/SVG: body heat map, radar, pose skeleton, milestone stepper (`src/viz/`) |
 
 The UI is responsive: on a wide desktop window it floats inside an iPhone device frame (matching the prototype);
@@ -86,15 +104,18 @@ apps/peak/
 ├── src/
 │   ├── main.tsx               # React root
 │   ├── App.tsx                # device frame + screen router
-│   ├── store.tsx              # React-context state store
-│   ├── theme.ts               # color tokens + heat() ramp + fonts
-│   ├── data.ts                # sample content (muscles, feed, goals, drills, coach replies)
+│   ├── store.tsx              # React-context store (holds all data, hydrates + persists)
+│   ├── model.ts               # data types (AppData) + derived values (peak score, symmetry…)
+│   ├── seed.ts                # authored first-run sample content
+│   ├── storage.ts             # on-device persistence (tauri-plugin-store / localStorage)
+│   ├── coach.ts               # AI-coach canned replies
+│   ├── theme.ts               # color tokens + heat() ramp + per-type accents + fonts
 │   ├── goals.ts               # goal → milestone decoration
 │   ├── styles.css             # frame / responsive / keyframes
-│   ├── components/            # StatusBar, BottomNav, ActionSheet
+│   ├── components/            # StatusBar, BottomNav, ActionSheet, CreateSheets (log/goal)
 │   ├── screens/               # Feed, Body, Coach, Goals
 │   └── viz/                   # BodyMap, Radar, Skeleton, Stepper
-└── src-tauri/                 # Rust shell, tauri.conf.json, capabilities, icons
+└── src-tauri/                 # Rust shell (registers tauri-plugin-store), capabilities, icons
 ```
 
 ## Design provenance

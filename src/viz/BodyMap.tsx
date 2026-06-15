@@ -1,4 +1,4 @@
-import { type Muscle } from "../data";
+import { type Muscle } from "../model";
 import { heat } from "../theme";
 import { FRONT, BACK } from "../data/bodyGeometry";
 

@@ -2,16 +2,21 @@ import { mono } from "../theme";
 
 // Goal milestone ladder: completed steps show checks, the current one glows,
 // upcoming ones are dim numbered nodes; the track fills lime through completed segments.
+// When `onPick` is supplied the nodes become tappable so the user can mark
+// progress (tap a node to complete through it; tap a done node to roll back).
 export function Stepper({
   milestones,
   completed,
   locked = false,
+  onPick,
 }: {
   milestones: string[];
   completed: number;
   locked?: boolean;
+  onPick?: (index: number) => void;
 }) {
   const cur = locked ? -1 : completed;
+  const interactive = !locked && !!onPick;
 
   return (
     <div style={{ display: "flex", alignItems: "flex-start", width: "100%" }}>
@@ -43,6 +48,7 @@ export function Stepper({
           <div key={i} style={{ display: "contents" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: 54 }}>
               <div
+                onClick={interactive ? () => onPick!(i) : undefined}
                 style={{
                   width: isCur ? 30 : 26,
                   height: isCur ? 30 : 26,
@@ -54,6 +60,7 @@ export function Stepper({
                   alignItems: "center",
                   justifyContent: "center",
                   transition: "all .2s",
+                  cursor: interactive ? "pointer" : "default",
                 }}
               >
                 {inner}
