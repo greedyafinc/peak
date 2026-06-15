@@ -1,5 +1,4 @@
 import { usePeak, type CoachTab } from "../store";
-import { DRILL_SETS, LIVE_METRICS } from "../data";
 import { Skeleton } from "../viz/Skeleton";
 import { mono } from "../theme";
 
@@ -9,17 +8,27 @@ const COACH_TABS: { key: CoachTab; label: string }[] = [
   { key: "drills", label: "Drills" },
 ];
 const QUICK_PROMPTS = ["Help me run a marathon", "Fix my weak points", "Plan my week", "Get a human flag"];
-const SPORTS = ["Basketball", "Soccer", "Tennis", "Calisthenics"];
 
 export function Coach() {
   const s = usePeak();
+  const sports = Object.keys(s.data.drills);
+  const drills = s.data.drills[s.sport] || [];
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", animation: "scrIn .28s ease" }}>
       {/* HEADER */}
       <div style={{ padding: "58px 22px 10px", flexShrink: 0 }}>
-        <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: "2px", color: "#6b7178", textTransform: "uppercase" }}>AI Coach</div>
-        <div style={{ fontSize: 30, fontWeight: 700, color: "#f4f5f3", letterSpacing: "-1px", marginTop: 2 }}>Coach</div>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: "2px", color: "#6b7178", textTransform: "uppercase" }}>AI Coach</div>
+            <div style={{ fontSize: 30, fontWeight: 700, color: "#f4f5f3", letterSpacing: "-1px", marginTop: 2 }}>Coach</div>
+          </div>
+          {s.coachTab === "chat" && s.data.chat.length > 1 && (
+            <button onClick={() => s.resetChat()} style={{ fontSize: 12, fontWeight: 600, padding: "7px 12px", borderRadius: 30, cursor: "pointer", border: "1px solid rgba(255,255,255,0.1)", background: "#16181d", color: "#9aa0a6" }}>
+              Clear
+            </button>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 6, background: "#16181d", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: 4, marginTop: 14 }}>
           {COACH_TABS.map((ct) => {
             const a = s.coachTab === ct.key;
@@ -40,7 +49,7 @@ export function Coach() {
       {s.coachTab === "chat" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           <div style={{ flex: 1, overflowY: "auto", padding: "8px 18px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
-            {s.chat.map((m, i) => {
+            {s.data.chat.map((m, i) => {
               const me = m.role === "me";
               return (
                 <div key={i} style={{ display: "flex", justifyContent: me ? "flex-end" : "flex-start" }}>
@@ -96,7 +105,7 @@ export function Coach() {
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
-            {LIVE_METRICS.map((lm) => (
+            {s.data.liveMetrics.map((lm) => (
               <div key={lm.label} style={{ background: "#16181d", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "13px 15px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: "#f4f5f3" }}>{lm.label}</div>
@@ -117,7 +126,7 @@ export function Coach() {
       {s.coachTab === "drills" && (
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 18px 104px" }}>
           <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto" }}>
-            {SPORTS.map((sp) => {
+            {sports.map((sp) => {
               const a = s.sport === sp;
               return (
                 <button key={sp} onClick={() => s.set({ sport: sp })} style={{ flexShrink: 0, fontSize: 13, fontWeight: 600, padding: "8px 15px", borderRadius: 30, cursor: "pointer", border: "1px solid " + (a ? "#ff8a3d" : "rgba(255,255,255,0.08)"), background: a ? "#ff8a3d" : "#16181d", color: a ? "#0a0b0d" : "#9aa0a6" }}>
@@ -127,7 +136,7 @@ export function Coach() {
             })}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-            {DRILL_SETS[s.sport].map((d) => (
+            {drills.map((d) => (
               <div key={d.name} style={{ background: "#16181d", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: "15px 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ fontSize: 16, fontWeight: 700, color: "#f4f5f3", letterSpacing: "-0.3px" }}>{d.name}</div>

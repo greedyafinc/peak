@@ -2,6 +2,7 @@ import { PeakProvider, usePeak } from "./store";
 import { StatusBar } from "./components/StatusBar";
 import { BottomNav } from "./components/BottomNav";
 import { ActionSheet } from "./components/ActionSheet";
+import { LogSheet, GoalSheet } from "./components/CreateSheets";
 import { Feed } from "./screens/Feed";
 import { Body } from "./screens/Body";
 import { Coach } from "./screens/Coach";
@@ -29,6 +30,8 @@ function Shell() {
           <StatusBar />
           <Screens />
           <ActionSheet />
+          <LogSheet />
+          <GoalSheet />
           <BottomNav />
         </div>
       </div>

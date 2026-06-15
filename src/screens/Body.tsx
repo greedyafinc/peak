@@ -1,26 +1,21 @@
 import { usePeak } from "../store";
-import { FRONT_MUSCLES, BACK_MUSCLES, METRIC_DEFS } from "../data";
+import { peakScore, symmetryPct, formatVolume } from "../model";
 import { BodyMap } from "../viz/BodyMap";
 import { Radar } from "../viz/Radar";
 import { heat, mono } from "../theme";
 
-const TILES = [
-  { v: "71", k: "Peak score", color: "#c6ff3d" },
-  { v: "94%", k: "L / R symmetry", color: "#3dffb0" },
-  { v: "28.4k", k: "Weekly volume (kg)", color: "#f4f5f3" },
-];
-
-const GAPS = [
-  { id: "g1", title: "Mobility is your #1 gap", dot: "#5aa9ff", reason: "At 47 it’s well below your strength. Limited hip & T-spine range caps your squat depth and overhead position.", workout: "Hip & T-spine Flow", dur: "18 min", tag: "Mobility" },
-  { id: "g2", title: "Calves lag behind quads", dot: "#ff8a3d", reason: "Quads 80 vs calves 49 — a 31-pt gap. This shows up as slow jumps and Achilles load when you run.", workout: "Calf & Plyometric Block", dur: "22 min", tag: "Power" },
-  { id: "g3", title: "Build your posterior chain", dot: "#ffd23f", reason: "Lower back 52 and hamstrings 60 trail your front side. Adds injury risk and limits sprint speed.", workout: "Deadlift Progression", dur: "35 min", tag: "Strength" },
-];
-
 export function Body() {
   const s = usePeak();
-  const muscles = s.bodyView === "front" ? FRONT_MUSCLES : BACK_MUSCLES;
+  const muscles = s.bodyView === "front" ? s.data.muscles.front : s.data.muscles.back;
   const sel = muscles.find((m) => m.id === s.selMuscle) || null;
   const selColor = sel ? heat(sel.score) : "#fff";
+
+  const peak = peakScore(s.data);
+  const tiles = [
+    { v: String(peak), k: "Peak score", color: "#c6ff3d" },
+    { v: symmetryPct(s.data) + "%", k: "L / R symmetry", color: "#3dffb0" },
+    { v: formatVolume(s.data.profile.weeklyVolume), k: "Weekly volume (kg)", color: "#f4f5f3" },
+  ];
 
   const seg = (active: boolean): React.CSSProperties => ({
     fontSize: 13,
@@ -33,6 +28,22 @@ export function Body() {
     color: active ? "#0a0b0d" : "#9aa0a6",
   });
 
+  const stepBtn: React.CSSProperties = {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "#0f1115",
+    color: "#f4f5f3",
+    fontSize: 16,
+    fontWeight: 700,
+    lineHeight: 1,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+
   return (
     <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "58px 0 104px", animation: "scrIn .28s ease" }}>
       {/* HEADER */}
@@ -42,7 +53,7 @@ export function Body() {
           <div style={{ fontSize: 30, fontWeight: 700, color: "#f4f5f3", letterSpacing: "-1px", marginTop: 2 }}>Heat Map</div>
         </div>
         <div style={{ textAlign: "center", background: "#16181d", border: "1px solid rgba(198,255,61,0.2)", borderRadius: 16, padding: "8px 14px" }}>
-          <div style={{ fontFamily: mono, fontSize: 24, fontWeight: 700, color: "#c6ff3d", lineHeight: 1 }}>71</div>
+          <div style={{ fontFamily: mono, fontSize: 24, fontWeight: 700, color: "#c6ff3d", lineHeight: 1 }}>{peak}</div>
           <div style={{ fontSize: 9, color: "#6b7178", textTransform: "uppercase", letterSpacing: "1px", marginTop: 3 }}>Peak score</div>
         </div>
       </div>
@@ -74,9 +85,13 @@ export function Body() {
                 <div style={{ width: 12, height: 12, borderRadius: 4, background: selColor, boxShadow: "0 0 12px " + selColor }} />
                 <span style={{ fontSize: 19, fontWeight: 700, color: "#f4f5f3", letterSpacing: "-0.3px" }}>{sel.name}</span>
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                <span style={{ fontFamily: mono, fontSize: 22, fontWeight: 700, color: selColor }}>{sel.score}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#c6ff3d" }}>{sel.trend}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button aria-label="Decrease score" onClick={() => s.bumpMuscle(s.bodyView, sel.id, -1)} style={stepBtn}>−</button>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <span style={{ fontFamily: mono, fontSize: 22, fontWeight: 700, color: selColor }}>{sel.score}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#c6ff3d" }}>{sel.trend}</span>
+                </div>
+                <button aria-label="Increase score" onClick={() => s.bumpMuscle(s.bodyView, sel.id, 1)} style={stepBtn}>+</button>
               </div>
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
@@ -108,7 +123,7 @@ export function Body() {
 
       {/* STAT TILES */}
       <div style={{ padding: "16px 18px 4px", display: "flex", gap: 10 }}>
-        {TILES.map((t) => (
+        {tiles.map((t) => (
           <div key={t.k} style={{ flex: 1, background: "#16181d", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: "13px 12px" }}>
             <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: t.color }}>{t.v}</div>
             <div style={{ fontSize: 10, color: "#6b7178", textTransform: "uppercase", letterSpacing: "0.6px", marginTop: 4, lineHeight: 1.3 }}>{t.k}</div>
@@ -121,19 +136,19 @@ export function Body() {
         <div style={{ fontSize: 16, fontWeight: 700, color: "#f4f5f3", letterSpacing: "-0.3px" }}>Athleticism</div>
         <div style={{ fontSize: 12, color: "#9aa0a6", marginTop: 1 }}>Six measured dimensions of performance</div>
         <div style={{ margin: "6px 0 4px" }}>
-          <Radar />
+          <Radar metrics={s.data.metrics} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 6 }}>
-          {METRIC_DEFS.map(([label, val]) => {
-            const color = heat(val);
+          {s.data.metrics.map((m) => {
+            const color = heat(m.val);
             return (
-              <div key={label}>
+              <div key={m.label}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                  <span style={{ fontSize: 13, color: "#cdd2d6", fontWeight: 500 }}>{label}</span>
-                  <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color }}>{val}</span>
+                  <span style={{ fontSize: 13, color: "#cdd2d6", fontWeight: 500 }}>{m.label}</span>
+                  <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color }}>{m.val}</span>
                 </div>
                 <div style={{ height: 6, borderRadius: 4, background: "#0f1115", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: val + "%", background: color, borderRadius: 4 }} />
+                  <div style={{ height: "100%", width: m.val + "%", background: color, borderRadius: 4 }} />
                 </div>
               </div>
             );
@@ -145,8 +160,8 @@ export function Body() {
       <div style={{ padding: "22px 18px 0" }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: "#f4f5f3", letterSpacing: "-0.3px", marginBottom: 12 }}>Gaps & next moves</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {GAPS.map((g) => {
-            const on = !!s.added[g.id];
+          {s.data.gaps.map((g) => {
+            const on = !!s.data.added[g.id];
             return (
               <div key={g.id} style={{ background: "#16181d", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 18, padding: "15px 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

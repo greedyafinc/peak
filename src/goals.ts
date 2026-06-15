@@ -1,4 +1,4 @@
-import { GOALS, type Goal } from "./data";
+import type { Goal } from "./model";
 
 export type DecoratedGoal = Goal & {
   total: number;
@@ -17,7 +17,7 @@ export type DecoratedGoal = Goal & {
 export function decorateGoal(g: Goal): DecoratedGoal {
   const total = g.milestones.length;
   const cm = g.completed < total ? g.milestones[g.completed] : "Complete";
-  const pct = Math.round((g.completed / total) * 100);
+  const pct = total ? Math.round((g.completed / total) * 100) : 0;
 
   let status: string;
   let statusColor: string;
@@ -62,6 +62,8 @@ export function decorateGoal(g: Goal): DecoratedGoal {
   };
 }
 
-export const DECORATED_GOALS = GOALS.map(decorateGoal);
-export const PRIMARY_GOAL = DECORATED_GOALS[0];
-export const OTHER_GOALS = DECORATED_GOALS.slice(1);
+/** Decorate the user's goals; the first is treated as the primary/hero goal. */
+export function decorateGoals(goals: Goal[]): { all: DecoratedGoal[]; primary: DecoratedGoal | null; others: DecoratedGoal[] } {
+  const all = goals.map(decorateGoal);
+  return { all, primary: all[0] ?? null, others: all.slice(1) };
+}
