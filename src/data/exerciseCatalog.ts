@@ -65,10 +65,47 @@ export const muscleLabel = (m: MuscleGroup): string => MUSCLE_TO_SVG[m]?.label ?
 // BOTH hands on a single implement are the exceptions and load as a total.
 const TWO_HANDED_SINGLE_IMPLEMENT = new Set<string>([
   "goblet-squat", "kettlebell-swing", "overhead-triceps-extension",
+  "dumbbell-pullover", "svend-press", "frog-pump",
 ]);
 export function isPerArm(ex: ExerciseDef): boolean {
   if (ex.equipment !== "dumbbell" && ex.equipment !== "kettlebell") return false;
   return !TWO_HANDED_SINGLE_IMPLEMENT.has(ex.id);
+}
+
+// ── Load model: total moved vs barbell-equivalent ─────────────────────────────
+// One logged set carries an ENTERED load (per-arm for dumbbell/kettlebell work).
+// Two derived notions sit on top of it, and they are NOT the same number:
+//   • perArmFactor — turns a per-implement entry into the total across both hands
+//     (two 75-lb dumbbells = 150 lb of iron). This is what a literal volume/tonnage
+//     tally wants — count both implements, nothing else.
+//   • effectiveLoadKg — the BARBELL-EQUIVALENT load used to percentile a lift against
+//     the strength cohort curves, which are calibrated to the barbell standard (§5.3).
+//     On top of the per-arm total it adds a free-implement→barbell uplift for PRESSING
+//     patterns (two dumbbells press ~85% of a barbell, so the barbell-equivalent sits a
+//     bit above their total), mirroring the benchmark variant factors in
+//     benchmarkVariants.ts (bench 1.18, overhead press 1.10). Non-press movements have
+//     no established uplift → factor 1.0 (just the per-arm doubling).
+// The inference engine (§4.3) MUST use effectiveLoadKg so a dumbbell-only lifter is
+// scored on the same scale as the barbell standard the curve is built from — otherwise
+// a per-hand load is read as if it were a whole barbell, burying strong lifts in the
+// bottom percentile (the dumbbell-bench bug).
+
+/** Multiplier that turns a per-implement entry into the total across both hands. */
+export function perArmFactor(ex: ExerciseDef): number {
+  return isPerArm(ex) ? 2 : 1;
+}
+
+/** Free-implement → barbell-equivalent uplift, applied to PRESSING patterns only. */
+function loadEquivFactor(ex: ExerciseDef): number {
+  if (ex.equipment !== "dumbbell" && ex.equipment !== "kettlebell") return 1;
+  if (ex.movementPattern === "horizontal_push") return 1.18; // dumbbell bench ≈ 85% of a barbell
+  if (ex.movementPattern === "vertical_push") return 1.1;    // dumbbell press ≈ 90% of a barbell
+  return 1; // rows, curls, raises, carries — no established barbell-equivalent uplift
+}
+
+/** Barbell-equivalent load (kg) for percentiling against the strength cohort curves. */
+export function effectiveLoadKg(ex: ExerciseDef, enteredKg: number): number {
+  return enteredKg * perArmFactor(ex) * loadEquivFactor(ex);
 }
 
 /** "Barbell · Chest" / "Dumbbell · Chest · per arm" subtitle for a picker row. */

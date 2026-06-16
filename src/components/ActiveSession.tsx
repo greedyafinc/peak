@@ -9,7 +9,7 @@ import { C, mono } from "../theme";
 import { inputStyle, UnitToggle } from "./ui";
 import { ExercisePickerModal } from "./ExercisePickerModal";
 import { EXERCISE_BY_ID } from "../data/exercises";
-import { categoryOf, isPerArm } from "../data/exerciseCatalog";
+import { categoryOf, isPerArm, perArmFactor } from "../data/exerciseCatalog";
 import { fmtClock, kgToDisplay, weightUnit } from "../units";
 import type { Session, UnitSystem } from "../types";
 
@@ -124,11 +124,14 @@ export function ActiveSession() {
   // Live stats from DONE sets (committed work).
   const stats = a.exercises.reduce(
     (acc, ex) => {
+      // Per-arm dumbbell/kettlebell work moves both implements — count the total tonnage.
+      const exDef = EXERCISE_BY_ID[ex.exerciseId];
+      const armMult = exDef ? perArmFactor(exDef) : 1;
       for (const st of ex.sets) {
         acc.total += 1;
         if (st.done) {
           acc.done += 1;
-          acc.volume += numOf(st.weight) * Math.floor(numOf(st.reps));
+          acc.volume += numOf(st.weight) * armMult * Math.floor(numOf(st.reps));
         }
       }
       return acc;

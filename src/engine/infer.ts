@@ -22,6 +22,7 @@ import type {
 import { INFER, MODELS } from "../constants";
 import { ALL_MUSCLES, LEAF_BY_ID } from "../data/capabilityTree";
 import { EXERCISE_BY_ID } from "../data/exercises";
+import { effectiveLoadKg } from "../data/exerciseCatalog";
 import { buildCohort } from "./cohort";
 import { lookupCohortDist } from "../data/distributions";
 import {
@@ -78,7 +79,10 @@ export function inferMuscleStrength(
         // Only sets with an actual external weight produce an est-1RM (§4.3 step 1).
         const w = set.weight?.value;
         if (w == null || w <= 0) continue;
-        const est = epley1RM(w, set.reps);
+        // Convert the ENTERED load (per-arm for dumbbell/kettlebell) to the barbell-
+        // equivalent the cohort curves are calibrated to, BEFORE Epley — otherwise a
+        // per-hand dumbbell load is scored as a whole barbell and percentiles far too low.
+        const est = epley1RM(effectiveLoadKg(exDef, w), set.reps);
         const daysAgo = daysBetween(set.derived?.[0]?.computedAt ?? session.createdAt, asOf);
         const recency = recencyFactor(daysAgo, INFER.recencyHalfLifeDays);
         const quality = qualityWeight(set.rpe);
