@@ -13,6 +13,7 @@ import { pctLabel, CircleButton, SectionHead, StatCard, FullScreenOverlay } from
 import { buildExerciseDetail, type DetailTip, type MuscleWorked } from "../engine/exerciseDetail";
 import type { ExerciseCategory } from "../data/exerciseCatalog";
 import { ProjectionChart, BellCurve, Sparkline } from "../viz/DetailCharts";
+import { ExerciseBodyMap } from "../viz/ExerciseBodyMap";
 import { Z_INDEX } from "../constants/ui";
 
 // Each body-part category owns an accent — bench reads chest-red, arms yellow, a run
@@ -149,6 +150,10 @@ export function ExerciseDetail() {
             <>
               <SectionHead title="Muscles worked" right="by region" />
               <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: radius.xl, padding: "6px 15px 13px" }}>
+                {/* highlight map — the lit silhouette of what this lift trains */}
+                <div style={{ paddingBottom: 12, marginBottom: 4, borderBottom: `1px solid ${C.line3}` }}>
+                  <ExerciseBodyMap muscles={view.musclesWorked} color={color} />
+                </div>
                 {view.musclesWorked.map((m, i) => (
                   <MuscleRow key={m.group} m={m} accent={color} first={i === 0} />
                 ))}
