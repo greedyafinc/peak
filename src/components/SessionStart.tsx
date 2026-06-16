@@ -3,7 +3,7 @@
 // your own routines here too. A quiet link still reaches the retrospective quick-log.
 
 import { usePeak } from "../store";
-import { C, mono, WORKOUT_THEME } from "../theme";
+import { C, mono, WORKOUT_THEME, radius } from "../theme";
 import { Sheet } from "./ui";
 import { BUILTIN_ROUTINES, ROUTINE_BY_ID } from "../data/routines";
 import { EXERCISE_BY_ID } from "../data/exercises";
@@ -87,7 +87,7 @@ export function StartSheet() {
 
       <button
         onClick={() => s.set({ startOpen: false, logOpen: true })}
-        style={{ width: "100%", fontSize: 13, fontWeight: 700, padding: "11px", borderRadius: 12, cursor: "pointer", border: `1px solid ${C.line2}`, background: "transparent", color: C.sub }}
+        style={{ width: "100%", fontSize: 13, fontWeight: 700, padding: "11px", borderRadius: radius.lg, cursor: "pointer", border: `1px solid ${C.line2}`, background: "transparent", color: C.sub }}
       >
         Log a past session or cardio instead
       </button>
@@ -168,7 +168,7 @@ function RoutineCard({ r, onStart, onEdit, onDuplicate, onRemove }: {
   const hasActions = !!(onEdit || onDuplicate || onRemove);
 
   return (
-    <div style={{ background: C.inner, border: `1px solid ${C.line2}`, borderRadius: 16, overflow: "hidden" }}>
+    <div style={{ background: C.inner, border: `1px solid ${C.line2}`, borderRadius: radius.xl, overflow: "hidden" }}>
       <button onClick={onStart} style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", cursor: "pointer", padding: "14px 15px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{r.name}</span>

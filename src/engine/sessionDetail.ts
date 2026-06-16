@@ -8,10 +8,9 @@
 // session actually did.
 
 import type { PeakData, MuscleGroup, WorkoutType } from "../types";
+import { est1RM } from "./math";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { isPerArm, perArmFactor, muscleLabel } from "../data/exerciseCatalog";
-
-const est1RM = (weightKg: number, reps: number): number => weightKg * (1 + reps / 30);
 
 export type SessionSetRow = {
   weightKg: number | null;

@@ -8,7 +8,8 @@
 
 import { useState } from "react";
 import { usePeak } from "../store";
-import { C, mono, WORKOUT_THEME } from "../theme";
+import { C, mono, WORKOUT_THEME, radius } from "../theme";
+import { StreakBadge } from "./ui";
 import { ROUTINE_BY_ID } from "../data/routines";
 import { computeWeekStatus, type WeekDayStatus } from "../engine";
 import type { WeeklyPlanItem } from "../types";
@@ -194,8 +195,8 @@ function ExpandedBody({ week, resolve, momentum, longestStreak, active28, onTogg
 }) {
   return (
     <div style={{ padding: "0 16px 14px" }}>
-      <div style={{ height: 5, borderRadius: 4, background: "rgba(255,255,255,0.07)", overflow: "hidden", marginBottom: 4 }}>
-        <div style={{ height: "100%", width: `${Math.round(week.pct * 100)}%`, background: C.accent, borderRadius: 4, transition: "width .25s" }} />
+      <div style={{ height: 5, borderRadius: radius.sm, background: "rgba(255,255,255,0.07)", overflow: "hidden", marginBottom: 4 }}>
+        <div style={{ height: "100%", width: `${Math.round(week.pct * 100)}%`, background: C.accent, borderRadius: radius.sm, transition: "width .25s" }} />
       </div>
 
       {week.days.map((d) => {
@@ -311,24 +312,6 @@ function FullMarker({ d }: { d: WeekDayStatus }) {
     default: // rest
       return <span style={{ width: 22, height: 2, borderRadius: 2, background: "rgba(255,255,255,0.12)", flexShrink: 0 }} />;
   }
-}
-
-// ── Streak badge (typographic, no emoji — replaces the design's flame icon) ──
-// Keeps the design's single warm "heat" accent (orange→red flame gradient) while
-// swapping the emoji for the streak count, so the badge stays the card's one warm
-// focal point instead of rhyming with the lime count and mint done-checks.
-function StreakBadge({ streak }: { streak: number }) {
-  const lit = streak > 0;
-  return (
-    <span style={{
-      width: 34, height: 34, borderRadius: 17, flexShrink: 0,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      background: lit ? `linear-gradient(135deg, ${C.orange}, ${C.red})` : "transparent",
-      border: lit ? "none" : `1.5px solid ${C.line2}`,
-    }}>
-      <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: lit ? "#0a0b0d" : C.muted }}>{streak}</span>
-    </span>
-  );
 }
 
 function Check({ size, color, stroke = 3.4 }: { size: number; color: string; stroke?: number }) {

@@ -12,13 +12,7 @@
 // contributingExerciseIds): barbell-bench-press, barbell-back-squat, barbell-deadlift,
 // barbell-overhead-press, pushup, pullup, plank.
 
-import type { ExerciseDef, MuscleGroup } from "../types";
-
-// Tiny dev-time guard helper: assert a weight map sums to ~1.0 (kept pure; only
-// runs if explicitly called — no side effects at import).
-export function muscleWeightSum(w: Partial<Record<MuscleGroup, number>>): number {
-  return Object.values(w).reduce<number>((a, b) => a + (b ?? 0), 0);
-}
+import type { ExerciseDef } from "../types";
 
 export const EXERCISES: ExerciseDef[] = [
   // ── Horizontal push ────────────────────────────────────────────────────────

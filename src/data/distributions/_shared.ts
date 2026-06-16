@@ -1,7 +1,7 @@
 // Peak — shared helpers for the cohort-conditioned distribution layer.
 // Pure functions only; no side effects, no network.
 
-import type { Cohort, CurveProvenance, DistributionId, SeedSourceId, Sex } from "../../types";
+import type { Cohort, CohortDist, CurveProvenance, DistributionId, SeedSourceId, Sex } from "../../types";
 import { AGE_BANDS, HEIGHT_BAND_CM } from "../../constants";
 
 export type Direction = { lowerIsBetter: boolean };
@@ -40,16 +40,19 @@ export function firstPartyWeight(nObserved: number, K: number): number {
 
 /**
  * Strength/age decline multiplier vs the 25–34 peak band (§5.3).
- * Strength is roughly flat through the mid-30s, then declines ~0.7%/yr, steepening
- * past 60 (sarcopenia). Modeled as a piecewise multiplier on the cohort mean.
- * Source: NIH/Harvard Health sarcopenia (3–8%/decade after 30).
+ * Roughly flat through the mid-30s, then declines ~1%/yr (≈10%/decade), steepening to
+ * ~2%/yr past 60. Modeled as a piecewise multiplier on the cohort mean. (The earlier
+ * ~0.7%/yr was borrowed from a muscle-MASS figure; maximal STRENGTH declines 2–5× faster
+ * than mass — ~10–15%/decade to 70, accelerating after.)
+ * Sources: Frontiers in Physiology sarcopenia/dynapenia quantitative review; J. Cachexia
+ * Sarcopenia Muscle overview.
  */
 export function strengthAgeFactor(ageYears: number): number {
   if (ageYears <= 34) return ageYears < 20 ? 0.95 : 1.0; // teens slightly below peak
-  if (ageYears <= 60) return 1.0 - 0.007 * (ageYears - 34); // ~0.7%/yr
-  // steepen after 60
-  const at60 = 1.0 - 0.007 * (60 - 34);
-  return Math.max(0.45, at60 - 0.013 * (ageYears - 60));
+  if (ageYears <= 60) return 1.0 - 0.01 * (ageYears - 34); // ~10%/decade
+  // steepen after 60 (~20%/decade)
+  const at60 = 1.0 - 0.01 * (60 - 34);
+  return Math.max(0.4, at60 - 0.02 * (ageYears - 60));
 }
 
 /**
@@ -126,6 +129,99 @@ export function fitGaussianTiers(values: number[], pctls: number[], lowerIsBette
   }
   const slope = sxx > 0 ? sxy / sxx : 0;
   return { mean: mv - slope * mz, sd: Math.abs(slope) };
+}
+
+/**
+ * Tier-anchored fit in log1p space for right-skewed, zero-floored metrics (rep counts,
+ * hold times). Fitting in ln(1+x) space and percentiling there means the curve can never
+ * place population mass below zero (the symmetric-Gaussian-over-a-count bug) and a few
+ * elite high-rep performers don't drag the median. The returned `transform` must be set
+ * on the CohortDist so percentileInGaussian maps the raw value the same way.
+ */
+export function fitGaussianTiersLog1p(
+  values: number[],
+  pctls: number[],
+  lowerIsBetter: boolean,
+): { mean: number; sd: number; transform: "log1p" } {
+  const t = values.map((v) => Math.log1p(Math.max(0, v)));
+  const { mean, sd } = fitGaussianTiers(t, pctls, lowerIsBetter);
+  return { mean, sd, transform: "log1p" };
+}
+
+// ── Age-banded tier ladders (the non-strength dimensions) ────────────────────
+// A leaf's population curve is published as a 5-tier ladder (beginner→elite) at a few
+// representative ages. To score a user we interpolate each tier across age, then fit a
+// Gaussian through the ladder at its general-population percentiles (TIER_PCTL-style),
+// so the MEDIAN is an average adult — not the trained/athletic reference the old code
+// pinned at the mean (the "intermediate-at-median" bug that buried ordinary efforts).
+
+export type AgeTierRow = { age: number; tiers: number[] };
+
+/** Interpolate each tier value across the age anchors at `age` (clamped at the ends). */
+export function interpTiers(rows: AgeTierRow[], age: number): number[] {
+  const n = rows[0]?.tiers.length ?? 0;
+  return Array.from({ length: n }, (_, i) =>
+    interp(age, rows.map((r) => ({ x: r.age, y: r.tiers[i] }))),
+  );
+}
+
+/**
+ * Build a cohort {mean, sd, transform?} from an age-banded tier ladder. `skewed` selects
+ * the log1p fit for right-skewed, zero-floored metrics (rep counts, hold times, jump
+ * heights) so the curve never leaks probability below zero; everything else fits a plain
+ * Gaussian. The fit is anchored at `pctls` (the tiers' general-population percentiles).
+ */
+export function tierLadderDist(
+  rows: AgeTierRow[],
+  age: number,
+  pctls: number[],
+  lowerIsBetter: boolean,
+  skewed: boolean,
+): { mean: number; sd: number; transform?: "log1p" } {
+  const tiers = interpTiers(rows, age);
+  return skewed
+    ? fitGaussianTiersLog1p(tiers, pctls, lowerIsBetter)
+    : fitGaussianTiers(tiers, pctls, lowerIsBetter);
+}
+
+/**
+ * A leaf scored from an age-banded, population-anchored tier ladder. This is the shared
+ * shape for every non-strength performed dimension (power, anaerobic, muscular endurance,
+ * balance, mobility) — the data layer just declares the ladder and `ladderCohortDist`
+ * turns it into a cohort distribution. Median = an average adult (the ladder is anchored at
+ * general-population percentiles), NOT the trained reference the old code pinned at the mean.
+ */
+export type LadderLeaf = {
+  male: AgeTierRow[];
+  female: AgeTierRow[];
+  pctls: number[];        // general-population percentile of each tier (beginner→elite)
+  lowerIsBetter: boolean;
+  skewed: boolean;        // right-skewed, zero-floored (rep counts, hold times, jumps) → log1p fit
+  seedSources: SeedSourceId[];
+  confidenceBasis: number;
+  dataSourceLabel: string;
+  assumptions: string[];
+};
+
+/** Build a CohortDist for a leaf from its age-banded tier ladder (the shared non-strength path). */
+export function ladderCohortDist(leafId: string, cohort: Cohort, K: number, leaf: LadderLeaf): CohortDist {
+  const sk = sexKey(cohort.sex);
+  const rows = sk === "female" ? leaf.female : leaf.male;
+  const { mean, sd, transform } = tierLadderDist(rows, cohort.ageYears, leaf.pctls, leaf.lowerIsBetter, leaf.skewed);
+  const nObserved = 0;
+  const sexNote =
+    cohort.sex === "unspecified" ? ["Sex unspecified → male-coded norms used as fallback."] : [];
+  return {
+    mean, sd, transform,
+    lowerIsBetter: leaf.lowerIsBetter,
+    seedSources: leaf.seedSources,
+    curveProvenance: "seed_population",
+    confidenceBasis: leaf.confidenceBasis,
+    distributionId: makeDistId(leafId, cohort),
+    K, nObserved, firstPartyWeight: firstPartyWeight(nObserved, K),
+    dataSourceLabel: leaf.dataSourceLabel,
+    assumptions: [...leaf.assumptions, ...sexNote],
+  };
 }
 
 /** Shared scaffolding most builders fill in. */

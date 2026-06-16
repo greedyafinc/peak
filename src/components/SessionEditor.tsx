@@ -9,13 +9,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePeak, type LogEntryInput, type LogSetInput, type LogCardioInput } from "../store";
-import { C, mono, WORKOUT_THEME } from "../theme";
-import { inputStyle, DurationInput } from "./ui";
+import { C, mono, WORKOUT_THEME, radius } from "../theme";
+import { inputStyle, DurationInput, ExerciseHeader, fieldLabelStyle, colLabel, cellInput } from "./ui";
 import { ExercisePickerModal } from "./ExercisePickerModal";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { isPerArm } from "../data/exerciseCatalog";
 import { kgToDisplay, weightToKg, kmToDisplay, distanceToKm, weightUnit, distanceUnit } from "../units";
 import type { Session, UnitSystem } from "../types";
+import { Z_INDEX } from "../constants/ui";
 
 // ── Local draft model (display-unit strings) ──────────────────────────────────
 // `origKg`/`seedW` (and the cardio equivalents) carry the ORIGINAL canonical value
@@ -170,7 +171,7 @@ export function SessionEditor() {
   const existingIds = draft.exercises.map((e) => e.exerciseId);
 
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 82, background: C.screen, display: "flex", flexDirection: "column", animation: "sheetUp .28s cubic-bezier(.2,.8,.2,1)" }}>
+    <div style={{ position: "absolute", inset: 0, zIndex: Z_INDEX.sessionEditor, background: C.screen, display: "flex", flexDirection: "column", animation: "sheetUp .28s cubic-bezier(.2,.8,.2,1)" }}>
       {/* ── Header ── */}
       <div style={{ flexShrink: 0, padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", borderBottom: `1px solid ${C.line2}`, background: C.screen }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -239,10 +240,10 @@ export function SessionEditor() {
 
         {/* Duration + notes */}
         <Heading>Details</Heading>
-        <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: 16, padding: "14px 15px" }}>
-          <label style={fieldLabel}>Duration</label>
+        <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: radius.xl, padding: "14px 15px" }}>
+          <label style={fieldLabelStyle}>Duration</label>
           <DurationInput key={`dur-${id}`} valueSec={draft.durationSec} showHours onChange={(sec) => patch({ durationSec: sec })} />
-          <label style={{ ...fieldLabel, marginTop: 16 }}>Notes</label>
+          <label style={{ ...fieldLabelStyle, marginTop: 16 }}>Notes</label>
           <textarea
             value={draft.notes}
             onChange={(e) => patch({ notes: e.target.value })}
@@ -289,9 +290,6 @@ export function SessionEditor() {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-const fieldLabel: React.CSSProperties = { fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 6, display: "block" };
-const colLabel: React.CSSProperties = { fontSize: 9.5, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "center" };
-
 function Heading({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, letterSpacing: "-0.2px", margin: "20px 2px 11px" }}>{children}</div>;
 }
@@ -311,16 +309,11 @@ function EditExerciseCard({
   const perArm = def ? isPerArm(def) : false;
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: 16, padding: 14 }}>
+    <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: radius.xl, padding: 14 }}>
       {/* header */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{def?.name ?? ex.exerciseId}</span>
-            {perArm && (
-              <span style={{ fontSize: 9, fontWeight: 700, color: C.blue, background: `${C.blue}1f`, padding: "2px 6px", borderRadius: 5, textTransform: "uppercase", letterSpacing: "0.4px" }}>Per arm</span>
-            )}
-          </div>
+          <ExerciseHeader name={def?.name ?? ex.exerciseId} perArm={perArm} />
         </div>
         <button onClick={onSwap} aria-label="Swap exercise"
           style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 10px", borderRadius: 9, cursor: "pointer", border: `1px solid ${C.line2}`, background: C.inner, color: C.blue }}>
@@ -375,7 +368,7 @@ function EditCardioCard({
   onHr: (v: string) => void;
 }) {
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: 16, padding: 14 }}>
+    <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: radius.xl, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>Cardio effort</span>
         <button onClick={onRemove} aria-label="Remove cardio effort"
@@ -383,26 +376,19 @@ function EditCardioCard({
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <label style={fieldLabel}>Distance · {distanceUnit(sys)}</label>
+          <label style={fieldLabelStyle}>Distance · {distanceUnit(sys)}</label>
           <input style={{ ...inputStyle, fontFamily: mono, textAlign: "center" }} type="number" inputMode="decimal" step="0.01" value={c.distance} placeholder="—"
             onChange={(e) => onDistance(e.target.value)} aria-label="Distance" />
         </div>
         <div style={{ flex: 1 }}>
-          <label style={fieldLabel}>Avg HR · bpm</label>
+          <label style={fieldLabelStyle}>Avg HR · bpm</label>
           <input style={{ ...inputStyle, fontFamily: mono, textAlign: "center" }} type="number" inputMode="numeric" value={c.avgHr} placeholder="—"
             onChange={(e) => onHr(e.target.value)} aria-label="Average heart rate" />
         </div>
       </div>
-      <label style={{ ...fieldLabel, marginTop: 14 }}>Duration</label>
+      <label style={{ ...fieldLabelStyle, marginTop: 14 }}>Duration</label>
       <DurationInput key={`cdur-${c.id}`} valueSec={c.durationSec} showHours onChange={onDuration} />
     </div>
   );
 }
 
-const cellInput: React.CSSProperties = {
-  ...inputStyle,
-  padding: "9px 6px",
-  textAlign: "center",
-  fontFamily: mono,
-  fontSize: 15,
-};

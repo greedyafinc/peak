@@ -572,10 +572,21 @@ export type Cohort = { sex: Sex; heightCm: number; ageYears: number };
 // (§2.2): mean/sd are conditioned on the immutable build, so percentile ranks the
 // user against similar-build people. `lowerIsBetter` flips direction (run/sprint
 // times). `confidenceBasis` is the seed's base confidence before per-user factors.
+/**
+ * Optional measurement-space transform for a cohort distribution. When set, `mean`/`sd`
+ * live in the TRANSFORMED space and a raw value is mapped through the transform before
+ * the z-score. `log1p` (x → ln(1+x)) models a right-skewed, zero-floored metric
+ * (rep counts, hold times) so the curve never leaks probability below zero — fixing the
+ * symmetric-Gaussian-over-a-count bug (e.g. pull-ups, single-leg-stance).
+ */
+export type DistTransform = "log1p";
+
 export type CohortDist = {
-  mean: number;          // expected RAW value for this cohort, in the leaf's unit
-  sd: number;            // spread of the RAW value for this cohort
+  mean: number;          // expected RAW value for this cohort, in the leaf's unit (transformed space when `transform` set)
+  sd: number;            // spread of the RAW value for this cohort (transformed space when `transform` set)
   lowerIsBetter: boolean;
+  /** When set, fit + percentile happen in this transformed space (right-skewed zero-floored metrics). */
+  transform?: DistTransform;
   seedSources: SeedSourceId[];
   curveProvenance: CurveProvenance;
   confidenceBasis: number; // [0,1]

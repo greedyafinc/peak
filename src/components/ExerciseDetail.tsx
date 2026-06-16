@@ -6,13 +6,14 @@
 // an improving-trend strip, past efforts, and gentle coach tips. All numbers come
 // from the pure builder, which reads only real on-device history (no fabrication).
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo } from "react";
 import { usePeak } from "../store";
-import { C, mono } from "../theme";
-import { pctLabel } from "./ui";
+import { C, mono, hexA, radius } from "../theme";
+import { pctLabel, CircleButton, SectionHead, StatCard, FullScreenOverlay } from "./ui";
 import { buildExerciseDetail, type DetailTip, type MuscleWorked } from "../engine/exerciseDetail";
 import type { ExerciseCategory } from "../data/exerciseCatalog";
 import { ProjectionChart, BellCurve, Sparkline } from "../viz/DetailCharts";
+import { Z_INDEX } from "../constants/ui";
 
 // Each body-part category owns an accent — bench reads chest-red, arms yellow, a run
 // cardio-green — matching the design's per-category coloring of the hero.
@@ -26,11 +27,6 @@ const CATEGORY_COLOR: Record<ExerciseCategory, string> = {
   Cardio: C.mint,
 };
 
-const hexA = (hex: string, a: number): string => {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-};
-
 export function ExerciseDetail() {
   const s = usePeak();
   const spec = s.exDetail;
@@ -41,7 +37,7 @@ export function ExerciseDetail() {
   const color = view ? CATEGORY_COLOR[view.categoryKey] : C.accent;
 
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 78, background: C.screen, display: "flex", flexDirection: "column", animation: "scrIn .26s ease" }}>
+    <FullScreenOverlay z={Z_INDEX.exerciseDetail}>
       {/* ── header ── */}
       <div style={{ flexShrink: 0, padding: "50px 18px 12px", background: `linear-gradient(180deg, ${C.screen} 78%, rgba(10,11,13,0))` }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -105,31 +101,32 @@ export function ExerciseDetail() {
 
           {/* STAT ROW */}
           <div style={{ display: "flex", gap: 10, marginTop: 13 }}>
-            <StatBox>
+            <StatCard>
               <div style={tinyLabel}>{view.prLabel}</div>
               <div style={{ fontSize: 20, fontWeight: 700, color: C.ink, letterSpacing: "-0.5px", marginTop: 5, lineHeight: 1 }}>{view.prValue}</div>
               <div style={{ fontFamily: mono, fontSize: 10, color: C.sub, marginTop: 4 }}>{view.prMeta}</div>
-            </StatBox>
+            </StatCard>
             {view.percentile != null ? (
-              <StatBox>
+              <StatCard>
                 <div style={tinyLabel}>Percentile</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color, letterSpacing: "-0.5px", marginTop: 5, lineHeight: 1, fontFamily: mono }}>{pctLabel(view.percentile)}</div>
+                <div style={{ fontSize: 9.5, color: C.muted, marginTop: 3, lineHeight: 1.3, letterSpacing: "0.2px" }}>{view.percentileSub}</div>
                 <div style={{ marginTop: 4 }}>
                   <BellCurve pct={view.percentile} color={color} />
                 </div>
-              </StatBox>
+              </StatCard>
             ) : (
-              <StatBox>
+              <StatCard>
                 <div style={tinyLabel}>Percentile</div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: C.muted, marginTop: 6, lineHeight: 1.3 }}>Not scored yet</div>
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 5, lineHeight: 1.4 }}>Log or benchmark more to rank this against your build.</div>
-              </StatBox>
+              </StatCard>
             )}
           </div>
 
           {/* TREND STRIP */}
           {view.trend && (
-            <div style={{ marginTop: 10, background: C.inner, border: `1px solid ${C.line3}`, borderRadius: 16, padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ marginTop: 10, background: C.inner, border: `1px solid ${C.line3}`, borderRadius: radius.xl, padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", color: trendColor(view.trend.dir) }}>
                   {trendWord(view.trend.dir)}
@@ -151,7 +148,7 @@ export function ExerciseDetail() {
           {view.musclesWorked.length > 0 && (
             <>
               <SectionHead title="Muscles worked" right="by region" />
-              <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: 16, padding: "6px 15px 13px" }}>
+              <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: radius.xl, padding: "6px 15px 13px" }}>
                 {view.musclesWorked.map((m, i) => (
                   <MuscleRow key={m.group} m={m} accent={color} first={i === 0} />
                 ))}
@@ -201,43 +198,18 @@ export function ExerciseDetail() {
           </div>
         </div>
       )}
-    </div>
+    </FullScreenOverlay>
   );
 }
 
 // ── small pieces ─────────────────────────────────────────────────────────────
 const tinyLabel: React.CSSProperties = { fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.7px" };
 
-function StatBox({ children }: { children: ReactNode }) {
-  return <div style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 13, minWidth: 0 }}>{children}</div>;
-}
-
-function CircleButton({ children, onClick, ariaLabel }: { children: ReactNode; onClick: () => void; ariaLabel: string }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-label={ariaLabel}
-      style={{ width: 38, height: 38, borderRadius: "50%", border: `1px solid ${C.line2}`, background: C.card, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-    >
-      {children}
-    </button>
-  );
-}
-
 function LegendSwatch({ color, dotted, label }: { color: string; dotted: boolean; label: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <div style={{ width: 16, borderTop: `2.5px ${dotted ? "dotted" : "solid"} ${color}` }} />
       <span style={{ fontSize: 10, color: C.sub }}>{label}</span>
-    </div>
-  );
-}
-
-function SectionHead({ title, right }: { title: string; right?: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "22px 2px 11px" }}>
-      <span style={{ fontSize: 16, fontWeight: 700, color: C.ink, letterSpacing: "-0.3px" }}>{title}</span>
-      {right && <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>{right}</span>}
     </div>
   );
 }
@@ -294,7 +266,7 @@ const TIP_COLOR: Record<DetailTip["kind"], string> = { load: C.accent, assist: C
 function TipCard({ tip, accent }: { tip: DetailTip; accent: string }) {
   const col = tip.kind === "load" ? accent : TIP_COLOR[tip.kind];
   return (
-    <div style={{ display: "flex", gap: 12, background: C.card, border: `1px solid ${C.line3}`, borderRadius: 16, padding: "14px 15px" }}>
+    <div style={{ display: "flex", gap: 12, background: C.card, border: `1px solid ${C.line3}`, borderRadius: radius.xl, padding: "14px 15px" }}>
       <div style={{ width: 34, height: 34, borderRadius: 10, background: hexA(col.startsWith("#") ? col : "#c6ff3d", 0.14), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <TipIcon kind={tip.kind} color={col} />
       </div>

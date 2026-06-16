@@ -12,6 +12,7 @@
 // session. The design's synthetic numbers are intentionally replaced by these.
 
 import type { PeakData, MuscleGroup, MuscleRegion, ExerciseDef } from "../types";
+import { est1RM } from "./math";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import {
   groupHasSubRegions,
@@ -126,7 +127,6 @@ export type ExerciseDetailView = {
 const MS_PER_DAY = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (d: Date): string => `${MONTHS[d.getMonth()]} ${d.getDate()}`;
-const est1RM = (weightKg: number, reps: number): number => weightKg * (1 + reps / 30);
 const near = (a: number, b: number): boolean => Math.abs(a - b) / b < 0.12;
 
 /** Ordinary least-squares slope/intercept over {t (days), y}; null if undetermined. */
@@ -233,8 +233,10 @@ function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView 
     }));
 
   // percentile — prefer a benchmark leaf the user actually tested for this lift,
-  // else the inferred primary-muscle strength (both real, build-relative).
-  const percentile = strengthPercentile(data, exerciseId, ex.primaryMuscles[0]);
+  // else the inferred primary-muscle strength (both real, build-relative). The
+  // returned `sub` is branch-specific so the UI never passes an inferred-muscle
+  // estimate off as a measured lift ranking (honesty contract).
+  const pctl = strengthPercentile(data, exerciseId, ex.primaryMuscles[0]);
 
   // gentle tips
   const alts = alternativesFor(exerciseId, 4).slice(0, 2).map((a) => a.name);
@@ -276,8 +278,8 @@ function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView 
     prLabel: "Current top set",
     prValue,
     prMeta,
-    percentile,
-    percentileSub: "vs your build",
+    percentile: pctl?.value ?? null,
+    percentileSub: pctl?.sub ?? "vs your build",
     trend,
     spark: series.length >= 2 ? series.map((e) => metricOf(e)) : null,
     history,
@@ -286,16 +288,29 @@ function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView 
   };
 }
 
-function strengthPercentile(data: PeakData, exerciseId: string, primaryMuscle: MuscleGroup | undefined): number | null {
+/**
+ * The build-relative percentile to show for a lift, plus an honest sub-label of WHAT
+ * was actually ranked. A benchmark leaf the user tested for this exercise wins (a
+ * measured lift); otherwise we fall back to the INFERRED primary-muscle strength
+ * estimate — which must be labelled as such so the user doesn't read an inference-on-
+ * inference as a measured bench ranking. Returns null when nothing is scored yet.
+ */
+function strengthPercentile(
+  data: PeakData,
+  exerciseId: string,
+  primaryMuscle: MuscleGroup | undefined,
+): { value: number; sub: string } | null {
   for (const leaf of Object.values(LEAF_BY_ID)) {
     if (leaf.contributingExerciseIds?.includes(exerciseId)) {
       const ls = data.leafScores[leaf.id];
-      if (ls?.percentileRaw != null) return ls.percentileRaw;
+      if (ls?.percentileRaw != null) return { value: ls.percentileRaw, sub: "measured · vs your build" };
     }
   }
   if (primaryMuscle) {
     const est = data.muscleEstimates[primaryMuscle];
-    if (est?.percentileRaw != null) return est.percentileRaw;
+    if (est?.percentileRaw != null) {
+      return { value: est.percentileRaw, sub: `inferred ${muscleLabel(primaryMuscle).toLowerCase()} strength` };
+    }
   }
   return null;
 }

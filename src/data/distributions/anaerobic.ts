@@ -1,138 +1,78 @@
-// Peak — anaerobic distributions: 400m sprint, repeat-sprint, 60s max effort (§2.2).
-// Conditioned on sex + age. 400m & repeat-sprint are TIME-based (lowerIsBetter=true);
-// 60s max effort is a DISTANCE in meters (higher is better).
+// Peak — anaerobic distributions: 400m sprint, repeat-sprint ability, 60s max effort.
+// Conditioned on sex + age. Each leaf is a GENERAL-POPULATION tier ladder fit at its
+// population percentiles (ladderCohortDist) — the median is an average adult, not the
+// trained sprinter the old code pinned at the mean (which read a 120s recreational 400m
+// at the ~0.1th percentile). Times are lowerIsBetter; the 60s distance is right-skewed
+// and zero-floored (log1p).
 //
-// Sources:
-//   400m:  Fitness Volt / Marathon Handbook age tables; peak ~age 20–30, ~3–6%/decade after.
-//   RSA:   NSCA / PMC reviews — repeat-sprint ability; modeled as a mean-sprint-time proxy.
-//   60s:   Rowing Level 60-second erg distance (men ~327m, women ~261m avg, excellent ~426m);
-//          consistent with running 60s ~330m for a trained adult.
+// Sources: World Masters Athletics / track age-grade tables (400m), team-sport repeat-
+// sprint protocols, rowing-erg & run-equivalent 60s norms — recreational fields, thin seed.
 
 import type { Cohort, CohortDist, LeafId } from "../../types";
 import { BLEND_K } from "../../constants";
-import { interp, makeDistId, sexKey, firstPartyWeight } from "./_shared";
+import { ladderCohortDist, type LadderLeaf } from "./_shared";
 
-// 400m sprint time (seconds), intermediate/trained mean by sex × age.
-const SPRINT400_MEAN: Record<"male" | "female", { x: number; y: number }[]> = {
-  male: [
-    { x: 22, y: 78 },
-    { x: 30, y: 80 },
-    { x: 40, y: 86 },
-    { x: 50, y: 94 },
-    { x: 60, y: 104 },
-  ],
-  female: [
-    { x: 22, y: 88 },
-    { x: 30, y: 90 },
-    { x: 40, y: 97 },
-    { x: 50, y: 106 },
-    { x: 60, y: 117 },
-  ],
-};
+const TP = [0.3, 0.55, 0.82, 0.94, 0.99];   // time-based ladders
+const RS = [0.25, 0.55, 0.82, 0.94, 0.99];  // right-skewed distance ladder
 
-// Repeat-sprint ability: mean time per rep (seconds) over a set of short maximal sprints
-// with short recovery. Modeled as a per-rep mean ~ a short-sprint time degraded by fatigue.
-const RSA_MEAN: Record<"male" | "female", { x: number; y: number }[]> = {
-  male: [
-    { x: 22, y: 6.8 }, // ~40m sprint mean time across reps
-    { x: 35, y: 7.2 },
-    { x: 50, y: 8.0 },
-    { x: 65, y: 9.0 },
-  ],
-  female: [
-    { x: 22, y: 7.6 },
-    { x: 35, y: 8.0 },
-    { x: 50, y: 8.9 },
-    { x: 65, y: 10.0 },
-  ],
-};
-
-// 60-second max-effort distance (meters) by sex × age (erg/run-equivalent).
-const MAX60_MEAN: Record<"male" | "female", { x: number; y: number }[]> = {
-  male: [
-    { x: 22, y: 330 },
-    { x: 35, y: 320 },
-    { x: 50, y: 295 },
-    { x: 65, y: 265 },
-  ],
-  female: [
-    { x: 22, y: 265 },
-    { x: 35, y: 258 },
-    { x: 50, y: 238 },
-    { x: 65, y: 215 },
-  ],
+const LADDERS: Record<string, LadderLeaf> = {
+  "anaerobic.400m": {
+    male: [
+      { age: 25, tiers: [135, 118, 98, 84, 72] }, { age: 35, tiers: [138, 121, 100, 86, 74] },
+      { age: 45, tiers: [146, 128, 106, 91, 78] }, { age: 55, tiers: [158, 138, 115, 99, 85] },
+      { age: 65, tiers: [175, 153, 127, 110, 95] },
+    ],
+    female: [
+      { age: 25, tiers: [155, 137, 114, 99, 85] }, { age: 35, tiers: [158, 140, 117, 101, 87] },
+      { age: 45, tiers: [168, 148, 124, 107, 92] }, { age: 55, tiers: [182, 161, 134, 116, 100] },
+      { age: 65, tiers: [200, 177, 148, 128, 110] },
+    ],
+    pctls: TP, lowerIsBetter: true, skewed: false,
+    seedSources: ["WMA_AGE_GRADED", "MILITARY_FITNESS"], confidenceBasis: 0.6,
+    dataSourceLabel: "400m all-out run-time norms (age-graded), recreational distributions by sex and age.",
+    assumptions: ["General-population tier ladder fit at population percentiles; median = an average adult, not a trained sprinter."],
+  },
+  "anaerobic.sprint_repeats": {
+    male: [
+      { age: 25, tiers: [9.2, 8.3, 7.2, 6.6, 6.0] }, { age: 35, tiers: [9.6, 8.7, 7.5, 6.9, 6.3] },
+      { age: 45, tiers: [10.3, 9.3, 8.1, 7.4, 6.8] }, { age: 55, tiers: [11.2, 10.1, 8.8, 8.1, 7.4] },
+      { age: 65, tiers: [12.4, 11.2, 9.8, 9.0, 8.2] },
+    ],
+    female: [
+      { age: 25, tiers: [10.4, 9.4, 8.2, 7.5, 6.9] }, { age: 35, tiers: [10.8, 9.8, 8.6, 7.9, 7.2] },
+      { age: 45, tiers: [11.6, 10.5, 9.2, 8.5, 7.8] }, { age: 55, tiers: [12.6, 11.4, 10.0, 9.2, 8.5] },
+      { age: 65, tiers: [13.9, 12.6, 11.1, 10.2, 9.4] },
+    ],
+    pctls: TP, lowerIsBetter: true, skewed: false,
+    seedSources: ["MILITARY_FITNESS"], confidenceBasis: 0.5,
+    dataSourceLabel: "Repeat-sprint ability — mean time per rep across a maximal repeat-sprint set (~40m reps).",
+    assumptions: [
+      "General-population tier ladder fit at population percentiles; median = an average adult.",
+      "Sparse, protocol-dependent seed → lower confidence.",
+    ],
+  },
+  "anaerobic.max_effort_60s": {
+    male: [
+      { age: 25, tiers: [220, 285, 350, 390, 440] }, { age: 35, tiers: [210, 275, 338, 378, 425] },
+      { age: 45, tiers: [195, 255, 315, 352, 398] }, { age: 55, tiers: [175, 230, 287, 322, 365] },
+      { age: 65, tiers: [152, 202, 255, 288, 328] },
+    ],
+    female: [
+      { age: 25, tiers: [175, 228, 282, 315, 358] }, { age: 35, tiers: [168, 220, 272, 305, 346] },
+      { age: 45, tiers: [155, 205, 255, 286, 325] }, { age: 55, tiers: [140, 185, 232, 262, 298] },
+      { age: 65, tiers: [122, 162, 206, 234, 268] },
+    ],
+    pctls: RS, lowerIsBetter: false, skewed: true,
+    seedSources: ["COOPER", "MILITARY_FITNESS"], confidenceBasis: 0.5,
+    dataSourceLabel: "Distance covered in a 60-second all-out effort (rowing-erg / run-equivalent), by sex and age.",
+    assumptions: [
+      "General-population tier ladder fit at population percentiles; median = an average adult.",
+      "Right-skewed, zero-floored output; equipment/protocol vary → thin seed.",
+    ],
+  },
 };
 
 export function anaerobicCohortDist(leafId: LeafId, cohort: Cohort): CohortDist | null {
-  const sk = sexKey(cohort.sex);
-  const K = BLEND_K.anaerobic;
-  const nObserved = 0;
-  const fpw = firstPartyWeight(nObserved, K);
-  const age = cohort.ageYears;
-  const sexNote =
-    cohort.sex === "unspecified" ? ["Sex unspecified → male-coded norms used as fallback."] : [];
-
-  const base = {
-    curveProvenance: "seed_population" as const,
-    K,
-    nObserved,
-    firstPartyWeight: fpw,
-    distributionId: makeDistId(leafId, cohort),
-  };
-
-  if (leafId === "anaerobic.400m") {
-    const mean = interp(age, SPRINT400_MEAN[sk]);
-    return {
-      ...base,
-      mean,
-      sd: mean * 0.16,
-      lowerIsBetter: true,
-      seedSources: ["MILITARY_FITNESS", "ACSM"],
-      confidenceBasis: 0.68,
-      dataSourceLabel: "400m sprint-time norms by sex and age (Fitness Volt / Marathon Handbook).",
-      assumptions: [
-        "Time-based (lower is better); mass-relative → §3.6.1 floor guard applies.",
-        "Peak ~age 20–30; ~3–6% slower per decade after.",
-        ...sexNote,
-      ],
-    };
-  }
-
-  if (leafId === "anaerobic.sprint_repeats") {
-    const mean = interp(age, RSA_MEAN[sk]);
-    return {
-      ...base,
-      mean,
-      sd: mean * 0.14,
-      lowerIsBetter: true,
-      seedSources: ["MILITARY_FITNESS"],
-      confidenceBasis: 0.6,
-      dataSourceLabel: "Repeat-sprint-ability mean per-rep time (NSCA/PMC reviews); sparse seed.",
-      assumptions: [
-        "Modeled as mean per-rep sprint time across a repeat-sprint set (lower is better).",
-        "Sparse seed → lower confidence; mass-relative → §3.6.1 floor guard applies.",
-        ...sexNote,
-      ],
-    };
-  }
-
-  if (leafId === "anaerobic.max_effort_60s") {
-    const mean = interp(age, MAX60_MEAN[sk]);
-    return {
-      ...base,
-      mean,
-      sd: mean * 0.18,
-      lowerIsBetter: false, // distance — more is better
-      seedSources: ["MILITARY_FITNESS"],
-      confidenceBasis: 0.6,
-      dataSourceLabel: "60-second max-effort distance (rowing-erg / run-equivalent), Rowing Level.",
-      assumptions: [
-        "Distance covered in a 60s all-out effort (higher is better).",
-        "Erg-anchored (men ~327m, women ~261m avg, excellent ~426m); run-equivalent comparable.",
-        ...sexNote,
-      ],
-    };
-  }
-
-  return null;
+  const leaf = LADDERS[leafId];
+  return leaf ? ladderCohortDist(leafId, cohort, BLEND_K.anaerobic, leaf) : null;
 }

@@ -243,8 +243,8 @@ export function aerobicCohortDist(leafId: LeafId, cohort: Cohort): CohortDist | 
   }
 
   if (leafId === "aerobic.hr_recovery") {
-    // 1-min HR-recovery drop (bpm). Active-adult mean ~25, declines ~1 bpm/decade past 40.
-    const mean = age <= 40 ? 25 : Math.max(16, 25 - (age - 40) * 0.1);
+    // 1-min HR-recovery drop (bpm). Active-adult mean ~25, declines ~5 bpm/decade past 40.
+    const mean = age <= 40 ? 25 : Math.max(12, 25 - (age - 40) * 0.5);
     return {
       ...base,
       mean,
@@ -255,7 +255,7 @@ export function aerobicCohortDist(leafId: LeafId, cohort: Cohort): CohortDist | 
       dataSourceLabel: "1-minute heart-rate-recovery norms; clinical cutoffs + active-population data.",
       assumptions: [
         "Gaussian ~N(25, 9.5) bpm for active adults; <12 bpm ≈ abnormal, >30 bpm ≈ athletic.",
-        "Mean shifts down ~1 bpm/decade past age 40.",
+        "Mean shifts down ~5 bpm/decade past age 40 (floored at 12 bpm).",
         ...sexNote,
       ],
     };

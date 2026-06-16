@@ -3,13 +3,12 @@
 // theme, inline styles, Space Grotesk + JetBrains Mono.
 
 import { useState, type CSSProperties, type ReactNode } from "react";
-import { C, mono } from "../theme";
+import { C, mono, radius } from "../theme";
 import { TIER_LABEL, TIER_COLOR, TIER_BANDS } from "../constants";
+import { Z_INDEX, ANIMATIONS } from "../constants/ui";
 import type { TierId, CurveProvenance, UnitSystem } from "../types";
 import { usePeak } from "../store";
-import { clockToSec, secToClock } from "../units";
-
-const pad2 = (n: number): string => String(Math.floor(n)).padStart(2, "0");
+import { clockToSec, secToClock, pad2 } from "../units";
 
 /** Band a percentile [0,1] into its tier (half-open, lower-inclusive; §2.3). */
 export function tierFromPct(p: number): TierId {
@@ -76,7 +75,7 @@ export function TierBadge({ tier, small }: { tier: TierId | null; small?: boolea
         letterSpacing: "0.5px",
         textTransform: "uppercase",
         padding: small ? "3px 8px" : "4px 10px",
-        borderRadius: 20,
+        borderRadius: radius.xxl,
         color: tier ? (isPeak ? "#0a0b0d" : col) : C.muted,
         background: tier ? (isPeak ? col : `${col}1f`) : "transparent",
         border: tier ? "none" : `1px solid ${C.line2}`,
@@ -119,13 +118,59 @@ export function PercentileBar({
 }
 
 // ── Stat tile ─────────────────────────────────────────────────────────────────
-export function StatTile({ value, label, color }: { value: ReactNode; label: string; color?: string }) {
+// One tile primitive with three layout variants, so the score/body tiles, the
+// session-detail totals, and the live-session stat strip all share a def:
+//   • "card"    (default) — score/body headline tiles: card bg, value over label.
+//   • "totals"  — session-detail totals: line border, label over an ellipsised value.
+//   • "compact" — live-session stat strip: inner bg, tighter radius/padding, `wide`.
+// `accent` is an alias for `color` (the value color); whichever is set wins.
+export function StatTile({
+  value,
+  label,
+  color,
+  accent,
+  variant = "card",
+  wide,
+}: {
+  value: ReactNode;
+  label: string;
+  color?: string;
+  accent?: string;
+  variant?: "card" | "totals" | "compact";
+  wide?: boolean;
+}) {
+  const valColor = accent ?? color ?? C.ink;
+
+  if (variant === "totals") {
+    return (
+      <div style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: radius.xl, padding: 13, minWidth: 0 }}>
+        <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.6px" }}>{label}</div>
+        <div style={{ fontFamily: mono, fontSize: 19, fontWeight: 700, color: valColor, letterSpacing: "-0.5px", marginTop: 6, lineHeight: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
+      </div>
+    );
+  }
+
+  if (variant === "compact") {
+    return (
+      <div style={{ flex: wide ? 1.25 : 1, background: C.inner, border: `1px solid ${C.line2}`, borderRadius: 13, padding: "9px 11px" }}>
+        <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: valColor, lineHeight: 1.1 }}>{value}</div>
+        <div style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginTop: 4 }}>{label}</div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ flex: 1, background: C.card, border: `1px solid ${C.line2}`, borderRadius: 16, padding: "13px 12px" }}>
-      <div style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: color ?? C.ink }}>{value}</div>
+    <div style={{ flex: 1, background: C.card, border: `1px solid ${C.line2}`, borderRadius: radius.xl, padding: "13px 12px" }}>
+      <div style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: valColor }}>{value}</div>
       <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: 4, lineHeight: 1.3 }}>{label}</div>
     </div>
   );
+}
+
+// ── Stat card — a flexible container that wraps arbitrary stat content. Used by
+//    the exercise-detail stat row, where each box holds custom value/sub markup. ─
+export function StatCard({ children }: { children: ReactNode }) {
+  return <div style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: radius.xl, padding: 13, minWidth: 0 }}>{children}</div>;
 }
 
 // ── Section header ────────────────────────────────────────────────────────────
@@ -140,6 +185,96 @@ export function SectionTitle({ children, sub }: { children: ReactNode; sub?: str
 
 export function Kicker({ children }: { children: ReactNode }) {
   return <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: "2px", color: C.muted, textTransform: "uppercase" }}>{children}</div>;
+}
+
+// ── Section header — the repeated Kicker + 8px spacer + SectionTitle(sub) triple
+//    the screens inline (Body/Improve). When `kicker` is omitted this is just a
+//    SectionTitle, so standalone titles can share the same component. Renders the
+//    exact markup the screens used, so it's a pixel-for-pixel replacement. ───────
+export function SectionHeader({ kicker, title, sub }: { kicker?: string; title: string; sub?: string }) {
+  return (
+    <>
+      {kicker != null && (
+        <>
+          <Kicker>{kicker}</Kicker>
+          <div style={{ height: 8 }} />
+        </>
+      )}
+      <SectionTitle sub={sub}>{title}</SectionTitle>
+    </>
+  );
+}
+
+// ── Section head — a title + optional right-aligned mono label row. Distinct from
+//    SectionTitle (which carries a sub-line); used by the detail overlays. ───────
+export function SectionHead({ title, right }: { title: string; right?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "22px 2px 11px" }}>
+      <span style={{ fontSize: 16, fontWeight: 700, color: C.ink, letterSpacing: "-0.3px" }}>{title}</span>
+      {right && <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>{right}</span>}
+    </div>
+  );
+}
+
+// ── Round 38×38 icon button — the back / overflow circle in full-page detail headers.
+export function CircleButton({ children, onClick, ariaLabel }: { children: ReactNode; onClick: () => void; ariaLabel: string }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={ariaLabel}
+      style={{ width: 38, height: 38, borderRadius: "50%", border: `1px solid ${C.line2}`, background: C.card, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── Streak badge (typographic, no emoji — replaces the design's flame icon) ──
+// Keeps the design's single warm "heat" accent (orange→red flame gradient) while
+// swapping the emoji for the streak count, so the badge stays the card's one warm
+// focal point instead of rhyming with the lime count and mint done-checks.
+export function StreakBadge({ streak }: { streak: number }) {
+  const lit = streak > 0;
+  return (
+    <span style={{
+      width: 34, height: 34, borderRadius: 17, flexShrink: 0,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      background: lit ? `linear-gradient(135deg, ${C.orange}, ${C.red})` : "transparent",
+      border: lit ? "none" : `1.5px solid ${C.line2}`,
+    }}>
+      <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: lit ? "#0a0b0d" : C.muted }}>{streak}</span>
+    </span>
+  );
+}
+
+// ── "Per arm" badge — flags a per-implement (dumbbell/kettlebell) lift. Canonical
+//    style; the half-dozen call sites used to spell this inline with drifted px. ─
+export function PerArmBadge() {
+  return (
+    <span style={{ fontFamily: mono, fontSize: 8.5, fontWeight: 700, letterSpacing: "0.4px", textTransform: "uppercase", color: C.blue, background: `${C.blue}1f`, padding: "1px 5px", borderRadius: radius.sm }}>
+      Per arm
+    </span>
+  );
+}
+
+// ── Exercise header — name + optional "Per arm" badge + optional subtitle ─────
+// The exercise-card title block the live session and the logged-session editor
+// share: the name (15px/700) and a Per-arm flag on one flex-wrap row, with an
+// optional muted subtitle line beneath. Renders the exact markup those sites
+// inlined, so it's a drop-in. (The Log sheet row and the session-detail block use
+// a materially different layout — span-wrapped / button-embedded — and keep theirs.)
+export function ExerciseHeader({ name, perArm, subtitle }: { name: string; perArm?: boolean; subtitle?: string }) {
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{name}</span>
+        {perArm && <PerArmBadge />}
+      </div>
+      {subtitle != null && (
+        <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>{subtitle}</div>
+      )}
+    </>
+  );
 }
 
 // ── Buttons / inputs ────────────────────────────────────────────────────────
@@ -186,15 +321,38 @@ export const inputStyle: CSSProperties = {
   color: C.ink,
   background: C.inner,
   border: `1px solid ${C.line2}`,
-  borderRadius: 12,
+  borderRadius: radius.lg,
   padding: "12px 14px",
   outline: "none",
+};
+
+/** Tiny centered uppercase column header for set-table grids (Set / kg / Reps / RPE). */
+export const colLabel: CSSProperties = { fontSize: 9.5, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "center" };
+
+/** Compact centered numeric cell input for set-table grids (mono, tighter padding). */
+export const cellInput: CSSProperties = {
+  ...inputStyle,
+  padding: "9px 6px",
+  textAlign: "center",
+  fontFamily: mono,
+  fontSize: 15,
+};
+
+/** The uppercase mono-tracked label style above form inputs. Shared so feature
+ *  files don't re-spell it inline (Field consumes it; SessionEditor etc. reuse). */
+export const fieldLabelStyle: CSSProperties = {
+  fontSize: 11,
+  color: C.muted,
+  textTransform: "uppercase",
+  letterSpacing: "0.8px",
+  marginBottom: 6,
+  display: "block",
 };
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 6, display: "block" }}>{label}</label>
+      <label style={fieldLabelStyle}>{label}</label>
       {children}
       {hint && <div style={{ fontSize: 11, color: C.muted, marginTop: 5, lineHeight: 1.4 }}>{hint}</div>}
     </div>
@@ -210,7 +368,7 @@ export function Chip({ active, color, onClick, children }: { active?: boolean; c
         fontSize: 13,
         fontWeight: 600,
         padding: "7px 13px",
-        borderRadius: 30,
+        borderRadius: radius.pill,
         cursor: "pointer",
         border: `1px solid ${active ? col : C.line2}`,
         background: active ? col : C.inner,
@@ -294,66 +452,6 @@ const segLabel: CSSProperties = {
   marginTop: 4,
 };
 
-// ── Segmented toggle (unit switch, mode picker, …) ────────────────────────────
-export function SegToggle<T extends string>({
-  options,
-  value,
-  onChange,
-  color,
-  style,
-}: {
-  options: { label: string; value: T }[];
-  value: T;
-  onChange: (v: T) => void;
-  color?: string;
-  style?: CSSProperties;
-}) {
-  const col = color ?? C.accent;
-  return (
-    <div
-      role="tablist"
-      style={{
-        display: "inline-flex",
-        background: C.inner,
-        border: `1px solid ${C.line2}`,
-        borderRadius: 11,
-        padding: 3,
-        gap: 2,
-        ...style,
-      }}
-    >
-      {options.map((o) => {
-        const on = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            role="tab"
-            aria-selected={on}
-            onClick={() => onChange(o.value)}
-            style={{
-              fontFamily: mono,
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: "0.3px",
-              padding: "7px 13px",
-              borderRadius: 8,
-              border: "none",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              background: on ? col : "transparent",
-              color: on ? "#0a0b0d" : C.sub,
-              transition: "background .15s, color .15s",
-            }}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Subtle unit toggle (per-field, but flips ONE global setting) ──────────────
 // Two tiny labels (e.g. kg · lb); tapping either sets PeakData.unitSystem, so a
 // toggle on any field instantly re-units every input and display in the app.
@@ -405,12 +503,50 @@ export function UnitToggle({ kind, style }: { kind: keyof typeof UNIT_PAIR; styl
   );
 }
 
+// ── Full-screen overlay shell ────────────────────────────────────────────────
+// The plain top-anchored, full-screen flex-column overlay the detail pages share
+// (SessionDetail, ExerciseDetail): absolute inset:0, a z from Z_INDEX, the screen
+// background, and the `scrIn` enter animation. Render the same markup the sites
+// inlined, so it's a pixel-for-pixel replacement. (Sheet — the bottom slide-up —
+// and the slide-up `sheetUp` panels keep their own scaffold; only the `scrIn`
+// fade-in overlays use this.)
+export function FullScreenOverlay({
+  z,
+  anim = ANIMATIONS.overlayIn,
+  background = C.screen,
+  children,
+  style,
+}: {
+  z: number;
+  anim?: string;
+  background?: string;
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: z,
+        background,
+        display: "flex",
+        flexDirection: "column",
+        animation: `scrIn ${anim}`,
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 // ── Bottom sheet shell ──────────────────────────────────────────────────────
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <div
       onClick={onClose}
-      style={{ position: "absolute", inset: 0, zIndex: 70, background: "rgba(0,0,0,0.6)", animation: "fadeIn .2s ease", display: "flex", alignItems: "flex-end" }}
+      style={{ position: "absolute", inset: 0, zIndex: Z_INDEX.sheet, background: "rgba(0,0,0,0.6)", animation: "fadeIn .2s ease", display: "flex", alignItems: "flex-end" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}

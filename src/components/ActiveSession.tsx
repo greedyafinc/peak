@@ -5,15 +5,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePeak, type LiveExercise, type LiveSet } from "../store";
-import { C, mono } from "../theme";
-import { inputStyle, UnitToggle } from "./ui";
+import { C, mono, radius } from "../theme";
+import { inputStyle, cellInput, UnitToggle, StatTile, ExerciseHeader } from "./ui";
 import { ExercisePickerModal } from "./ExercisePickerModal";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { categoryOf, isPerArm, perArmFactor } from "../data/exerciseCatalog";
 import { fmtClock, kgToDisplay, weightUnit } from "../units";
 import type { Session, UnitSystem } from "../types";
-
-const REST_DEFAULT_SEC = 90;
+import { Z_INDEX, TIMINGS } from "../constants/ui";
 
 // ── 1-second ticker — only runs while `active`, so an off-screen view's interval
 //    isn't spinning (the elapsed/rest displays only matter while visible). ───────
@@ -61,8 +60,8 @@ export function MiniSessionBar() {
       onClick={() => s.set({ activeOpen: true })}
       style={{
         position: "absolute", left: 10, right: 10, bottom: "calc(env(safe-area-inset-bottom) + 72px)",
-        zIndex: 48, display: "flex", alignItems: "center", gap: 11, cursor: "pointer",
-        padding: "11px 14px", borderRadius: 16, border: `1px solid ${C.accent}55`,
+        zIndex: Z_INDEX.miniBar, display: "flex", alignItems: "center", gap: 11, cursor: "pointer",
+        padding: "11px 14px", borderRadius: radius.xl, border: `1px solid ${C.accent}55`,
         background: "rgba(20,24,16,0.94)", backdropFilter: "blur(14px)",
         boxShadow: `0 8px 24px -10px ${C.accent}66`,
       }}
@@ -144,7 +143,7 @@ export function ActiveSession() {
     if (!st.done && !repsValidOf(st)) return;   // can't complete an empty set
     const becomingDone = !st.done;
     s.toggleLiveSetDone(liExId, st.id);
-    if (becomingDone) s.setRest(Date.now() + REST_DEFAULT_SEC * 1000);
+    if (becomingDone) s.setRest(Date.now() + TIMINGS.restDefaultSec * 1000);
   };
 
   const flashThenClear = (msg: string) => {
@@ -184,7 +183,7 @@ export function ActiveSession() {
   const existingIds = a.exercises.map((e) => e.exerciseId);
 
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 80, background: C.screen, display: "flex", flexDirection: "column", animation: "sheetUp .28s cubic-bezier(.2,.8,.2,1)" }}>
+    <div style={{ position: "absolute", inset: 0, zIndex: Z_INDEX.activeSession, background: C.screen, display: "flex", flexDirection: "column", animation: "sheetUp .28s cubic-bezier(.2,.8,.2,1)" }}>
       {/* ── Header: minimize · title · menu, then the live stat strip ── */}
       <div style={{ flexShrink: 0, padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", borderBottom: `1px solid ${C.line2}`, background: C.screen, position: "relative" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -203,9 +202,9 @@ export function ActiveSession() {
 
         {/* stat strip */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-          <Stat value={fmtClock(elapsed)} label="Elapsed" color={C.accent} wide />
-          <Stat value={`${Math.round(stats.volume).toLocaleString()}`} label={`Volume · ${weightUnit(sys)}`} />
-          <Stat value={`${stats.done}/${stats.total}`} label="Sets done" />
+          <StatTile variant="compact" value={fmtClock(elapsed)} label="Elapsed" color={C.accent} wide />
+          <StatTile variant="compact" value={`${Math.round(stats.volume).toLocaleString()}`} label={`Volume · ${weightUnit(sys)}`} />
+          <StatTile variant="compact" value={`${stats.done}/${stats.total}`} label="Sets done" />
         </div>
 
         {/* overflow menu */}
@@ -230,7 +229,7 @@ export function ActiveSession() {
       {/* ── Body: exercise cards ── */}
       <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 20px" }}>
         {savedFlash && (
-          <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 12, background: `${C.mint}1a`, border: `1px solid ${C.mint}44`, color: C.mint, fontSize: 12.5, fontWeight: 600, textAlign: "center" }}>
+          <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: radius.lg, background: `${C.mint}1a`, border: `1px solid ${C.mint}44`, color: C.mint, fontSize: 12.5, fontWeight: 600, textAlign: "center" }}>
             {savedFlash}
           </div>
         )}
@@ -240,7 +239,7 @@ export function ActiveSession() {
             <div style={{ fontSize: 15, fontWeight: 700, color: C.ink, marginBottom: 6 }}>Empty workout</div>
             <div style={{ fontSize: 13, lineHeight: 1.55, marginBottom: 18 }}>Add your first exercise to start tracking sets, volume and time.</div>
             <button onClick={() => setPicker({ mode: "add" })}
-              style={{ fontSize: 14, fontWeight: 700, padding: "11px 20px", borderRadius: 12, border: "none", cursor: "pointer", background: C.accent, color: "#0a0b0d" }}>
+              style={{ fontSize: 14, fontWeight: 700, padding: "11px 20px", borderRadius: radius.lg, border: "none", cursor: "pointer", background: C.accent, color: "#0a0b0d" }}>
               ＋ Add exercise
             </button>
           </div>
@@ -312,14 +311,14 @@ export function ActiveSession() {
 
       {/* ── Save-as-routine modal ── */}
       {saveOpen && (
-        <div onClick={() => setSaveOpen(false)} style={{ position: "absolute", inset: 0, zIndex: 95, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, animation: "fadeIn .2s ease" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 320, background: C.card, border: `1px solid ${C.line}`, borderRadius: 20, padding: 20 }}>
+        <div onClick={() => setSaveOpen(false)} style={{ position: "absolute", inset: 0, zIndex: Z_INDEX.modal, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, animation: "fadeIn .2s ease" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 320, background: C.card, border: `1px solid ${C.line}`, borderRadius: radius.xxl, padding: 20 }}>
             <div style={{ fontSize: 17, fontWeight: 700, color: C.ink, marginBottom: 6 }}>Save as routine</div>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, lineHeight: 1.45 }}>Reuse this exercise lineup as a template next time.</div>
             <input autoFocus value={routineName} placeholder="Routine name" onChange={(e) => setRoutineName(e.target.value)} style={{ ...inputStyle, marginBottom: 14 }} />
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setSaveOpen(false)} style={{ flex: 1, fontSize: 14, fontWeight: 700, padding: 12, borderRadius: 12, border: `1px solid ${C.line2}`, background: "transparent", color: C.sub, cursor: "pointer" }}>Cancel</button>
-              <button onClick={doSaveRoutine} style={{ flex: 1, fontSize: 14, fontWeight: 700, padding: 12, borderRadius: 12, border: "none", background: C.accent, color: "#0a0b0d", cursor: "pointer" }}>Save</button>
+              <button onClick={() => setSaveOpen(false)} style={{ flex: 1, fontSize: 14, fontWeight: 700, padding: 12, borderRadius: radius.lg, border: `1px solid ${C.line2}`, background: "transparent", color: C.sub, cursor: "pointer" }}>Cancel</button>
+              <button onClick={doSaveRoutine} style={{ flex: 1, fontSize: 14, fontWeight: 700, padding: 12, borderRadius: radius.lg, border: "none", background: C.accent, color: "#0a0b0d", cursor: "pointer" }}>Save</button>
             </div>
           </div>
         </div>
@@ -340,15 +339,6 @@ export function ActiveSession() {
 }
 
 // ── Sub-components ──────────────────────────────────────────────────────────────
-function Stat({ value, label, color, wide }: { value: string; label: string; color?: string; wide?: boolean }) {
-  return (
-    <div style={{ flex: wide ? 1.25 : 1, background: C.inner, border: `1px solid ${C.line2}`, borderRadius: 13, padding: "9px 11px" }}>
-      <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: color ?? C.ink, lineHeight: 1.1 }}>{value}</div>
-      <div style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginTop: 4 }}>{label}</div>
-    </div>
-  );
-}
-
 function MenuItem({ label, onClick, danger, disabled }: { label: string; onClick: () => void; danger?: boolean; disabled?: boolean }) {
   return (
     <button
@@ -405,21 +395,15 @@ function ExerciseCard({
   };
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: 16, padding: 14 }}>
+    <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: radius.xl, padding: 14 }}>
       {/* header */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{ex?.name ?? liEx.exerciseId}</span>
-            {perArm && (
-              <span style={{ fontSize: 9, fontWeight: 700, color: C.blue, background: `${C.blue}1f`, padding: "2px 6px", borderRadius: 5, textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Per arm
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>
-            {prevSummary ? <>Last · {prevSummary} {wUnit}{perArm ? "/arm" : ""}</> : ex ? categoryOf(ex) : ""}
-          </div>
+          <ExerciseHeader
+            name={ex?.name ?? liEx.exerciseId}
+            perArm={perArm}
+            subtitle={prevSummary ? `Last · ${prevSummary} ${wUnit}${perArm ? "/arm" : ""}` : ex ? categoryOf(ex) : ""}
+          />
         </div>
         <button onClick={onSwap} aria-label="Swap exercise"
           style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 10px", borderRadius: 9, cursor: "pointer", border: `1px solid ${C.line2}`, background: C.inner, color: C.blue }}>
@@ -451,12 +435,12 @@ function ExerciseCard({
               <div style={{ flex: 1 }}>
                 <input type="number" inputMode="decimal" step="0.5" value={st.weight} placeholder={hint.w}
                   onChange={(e) => onSetField(st.id, "weight", e.target.value)}
-                  style={{ ...inputStyle, padding: "9px 6px", textAlign: "center", fontFamily: mono, fontSize: 15 }} />
+                  style={cellInput} />
               </div>
               <div style={{ flex: 1 }}>
                 <input type="number" inputMode="numeric" value={st.reps} placeholder={hint.reps}
                   onChange={(e) => onSetField(st.id, "reps", e.target.value)}
-                  style={{ ...inputStyle, padding: "9px 6px", textAlign: "center", fontFamily: mono, fontSize: 15 }} />
+                  style={cellInput} />
               </div>
               <button
                 onClick={() => onToggleDone(st)}

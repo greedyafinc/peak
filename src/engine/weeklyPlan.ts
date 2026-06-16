@@ -5,6 +5,7 @@
 // user explicitly ticked it; a never-planned day stays a rest day.
 
 import type { Session, WeeklyPlan, WeeklyPlanItem } from "../types";
+import { pad2 } from "../units";
 
 export type DayKind = "done" | "today" | "upcoming" | "missed" | "rest";
 
@@ -46,7 +47,6 @@ export function mondayIndex(d: Date): number {
   return (d.getDay() + 6) % 7;
 }
 
-const pad2 = (n: number): string => String(n).padStart(2, "0");
 const dayKey = (d: Date): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 /** Local-midnight Date n days from the given date (DST-safe via the y/m/d ctor). */

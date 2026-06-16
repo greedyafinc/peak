@@ -68,7 +68,7 @@ export const metersToLengthDisplay = (m: number, sys: UnitSystem, dp = 1): numbe
 // seconds box — a 5K is "24:30", a marathon "3:58:12", a plank "2:15". The store
 // keeps the canonical scalar (seconds for benchmarks, minutes for cardio); these
 // helpers are the only place a human-readable clock is parsed or rendered.
-const pad2 = (n: number): string => String(Math.floor(n)).padStart(2, "0");
+export const pad2 = (n: number): string => String(Math.floor(n)).padStart(2, "0");
 
 /** {h,m,s} → total seconds. */
 export const clockToSec = (h: number, m: number, s: number): number =>

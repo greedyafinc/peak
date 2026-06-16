@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { usePeak } from "../store";
 import { C, mono } from "../theme";
-import { Sheet, Field, PrimaryButton, inputStyle } from "./ui";
+import { Sheet, Field, PrimaryButton, inputStyle, PerArmBadge } from "./ui";
 import { ExercisePickerModal } from "./ExercisePickerModal";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { isPerArm, exerciseSubtitle } from "../data/exerciseCatalog";
@@ -136,9 +136,7 @@ function RoutineExRow({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{ex?.name ?? re.exerciseId}</span>
-            {perArm && (
-              <span style={{ fontSize: 8.5, fontWeight: 700, color: C.blue, background: `${C.blue}1f`, padding: "1px 5px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" }}>Per arm</span>
-            )}
+            {perArm && <PerArmBadge />}
           </div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{ex ? exerciseSubtitle(ex) : ""}</div>
         </div>

@@ -1,7 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { load, loadSync, save, loadSyncAt, loadAt, saveAt, removeAt, ACTIVE_SESSION_KEY } from "./storage";
-import { emptyPeakData, DATA_VERSION } from "./defaults";
+import { emptyPeakData } from "./defaults";
 import { ROUTINE_BY_ID } from "./data/routines";
+import { uid } from "./utils/id";
+import { nowISO, localDayKey } from "./utils/date";
+import { reconcile, snapshotBuild } from "./data/migration";
 import { weightToKg, kgToDisplay } from "./units";
 import {
   recomputeAll,
@@ -205,39 +208,6 @@ export type PeakStore = UIState & {
   toggleDayDone: (dateKey: string) => void;
   startTodayPlan: () => void;
 };
-
-const nowISO = () => new Date().toISOString();
-function localDayKey(d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-let _seq = 0;
-function uid(prefix: string): string {
-  _seq += 1;
-  return `${prefix}_${Date.now().toString(36)}_${_seq.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-}
-
-// Migrate / reconcile: this is a fresh v3 model, so any older/missing doc resets
-// to an empty v3 document (the old v1 prototype lived under a different storage
-// key, so no real user data is destroyed).
-function reconcile(loaded: Partial<PeakData> | null): PeakData {
-  const base = emptyPeakData();
-  if (!loaded || (loaded.version ?? 0) < DATA_VERSION || !loaded.schema) return base;
-  return { ...base, ...loaded } as PeakData;
-}
-
-// Build the immutable BuildSnapshot from stored covariates, refreshing the derived
-// ageYears + capturedAt at the moment of capture (birthDate is the source of truth).
-function snapshotBuild(build: BuildSnapshot, comp: CompositionSnapshot | null, at: string): BuildSnapshot {
-  return {
-    ...build,
-    ageYears: ageYearsFrom(build.birthDate, at),
-    bodyweightKg: comp?.bodyweight?.value ?? build.bodyweightKg,
-    bodyFatPct: comp?.bodyFatPct?.value ?? build.bodyFatPct,
-    ffmi: comp?.ffmi?.value ?? build.ffmi,
-    capturedAt: at,
-  };
-}
 
 const Ctx = createContext<PeakStore | null>(null);
 

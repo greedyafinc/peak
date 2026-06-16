@@ -8,7 +8,7 @@
 // category quick-filters — the "sort by categories alphabetical + search" ask.
 
 import { useEffect, useMemo, useState } from "react";
-import { C, mono } from "../theme";
+import { C, mono, radius } from "../theme";
 import { inputStyle } from "./ui";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import {
@@ -16,6 +16,7 @@ import {
   exerciseSubtitle, type ExerciseCategory,
 } from "../data/exerciseCatalog";
 import type { ExerciseDef } from "../types";
+import { Z_INDEX } from "../constants/ui";
 
 type Filter = "Best" | "All" | ExerciseCategory;
 
@@ -100,7 +101,7 @@ export function ExercisePickerModal({
   return (
     <div
       onClick={onClose}
-      style={{ position: "absolute", inset: 0, zIndex: 90, background: "rgba(0,0,0,0.62)", animation: "fadeIn .2s ease", display: "flex", alignItems: "flex-end" }}
+      style={{ position: "absolute", inset: 0, zIndex: Z_INDEX.picker, background: "rgba(0,0,0,0.62)", animation: "fadeIn .2s ease", display: "flex", alignItems: "flex-end" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -137,7 +138,7 @@ export function ExercisePickerModal({
                   key={c}
                   onClick={() => { setFilter(c); setQ(""); }}
                   style={{
-                    flexShrink: 0, fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 30, cursor: "pointer",
+                    flexShrink: 0, fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: radius.pill, cursor: "pointer",
                     border: `1px solid ${on ? C.accent : C.line2}`,
                     background: on ? C.accent : C.inner,
                     color: on ? "#0a0b0d" : C.sub,

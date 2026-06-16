@@ -5,8 +5,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePeak } from "../store";
-import { C, mono, WORKOUT_THEME } from "../theme";
-import { Sheet, Chip, PrimaryButton, inputStyle } from "./ui";
+import { C, mono, WORKOUT_THEME, radius } from "../theme";
+import { Sheet, Chip, PrimaryButton, inputStyle, fieldLabelStyle } from "./ui";
 import { BUILTIN_ROUTINES, ROUTINE_BY_ID } from "../data/routines";
 import { WEEKLY_TEMPLATES } from "../data/weeklyTemplates";
 import type { WeeklyPlanItem, WorkoutType } from "../types";
@@ -87,7 +87,7 @@ export function WeeklyPlanEditor() {
               <span style={{ fontSize: 13, fontWeight: 700, color: days[i].length ? C.ink : C.muted }}>{name}</span>
               <button
                 onClick={() => setAssignDay(i)}
-                style={{ fontSize: 11.5, fontWeight: 700, color: C.accent, background: `${C.accent}14`, border: `1px solid ${C.accent}44`, borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}
+                style={{ fontSize: 11.5, fontWeight: 700, color: C.accent, background: `${C.accent}14`, border: `1px solid ${C.accent}44`, borderRadius: radius.md, padding: "4px 10px", cursor: "pointer" }}
               >
                 ＋ Add
               </button>
@@ -177,9 +177,9 @@ function AssignSheet({ dayName, onClose, onAdd }: {
               <Chip key={t} active={otherType === t} color={WORKOUT_THEME[t].color} onClick={() => setOtherType(t)}>{t}</Chip>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 6 }}>Name</div>
+          <div style={fieldLabelStyle}>Name</div>
           <input value={title} placeholder="e.g. Run · 5K" onChange={(e) => setTitle(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
-          <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 6 }}>Detail (optional)</div>
+          <div style={fieldLabelStyle}>Detail (optional)</div>
           <input value={detail} placeholder="e.g. Tempo · 28 min" onChange={(e) => setDetail(e.target.value)} style={{ ...inputStyle, marginBottom: 18 }} />
           <PrimaryButton disabled={!title.trim()} onClick={addOther}>Add to {dayName}</PrimaryButton>
         </>
@@ -192,7 +192,7 @@ function RoutineRow({ name, sub, onClick }: { name: string; sub: string; onClick
   return (
     <button
       onClick={onClick}
-      style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, background: C.inner, border: `1px solid ${C.line2}`, borderRadius: 12, padding: "12px 13px", cursor: "pointer" }}
+      style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, background: C.inner, border: `1px solid ${C.line2}`, borderRadius: radius.lg, padding: "12px 13px", cursor: "pointer" }}
     >
       <span style={{ width: 3, alignSelf: "stretch", borderRadius: 2, background: C.accent, minHeight: 28 }} />
       <div style={{ flex: 1, minWidth: 0 }}>

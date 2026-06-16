@@ -11,6 +11,7 @@
 
 import type { Projection, ScorePoint } from "../types";
 import { PROJ, PEAK_CAP, MODELS } from "../constants";
+import { round1 } from "./math";
 
 const MS_PER_DAY = 86_400_000;
 const DAYS_PER_WEEK = 7;
@@ -141,6 +142,3 @@ export function projectToTarget(
   };
 }
 
-function round1(v: number): number {
-  return Math.round(v * 10) / 10;
-}

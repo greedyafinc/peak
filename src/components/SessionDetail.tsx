@@ -4,12 +4,14 @@
 // tap through to their own effort-detail overlay. Numbers come from the pure
 // builder (buildSessionSummary) — only real logged content, nothing fabricated.
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo } from "react";
 import { usePeak } from "../store";
-import { C, mono, WORKOUT_THEME } from "../theme";
+import { C, mono, WORKOUT_THEME, radius } from "../theme";
+import { CircleButton, SectionHead, StatTile, PerArmBadge, FullScreenOverlay } from "./ui";
 import { EllipsisMenu } from "./SessionMenu";
 import { buildSessionSummary, type SessionExerciseRow, type SessionCardioRow } from "../engine/sessionDetail";
 import { fmtClock, fmtDistanceKm, kgToDisplay, kmToDisplay, weightUnit, paceLabel, distanceUnit } from "../units";
+import { Z_INDEX } from "../constants/ui";
 
 export function SessionDetail() {
   const s = usePeak();
@@ -23,7 +25,7 @@ export function SessionDetail() {
   const color = theme.color;
 
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 76, background: C.screen, display: "flex", flexDirection: "column", animation: "scrIn .26s ease" }}>
+    <FullScreenOverlay z={Z_INDEX.sessionDetail}>
       {/* ── header ── */}
       <div style={{ flexShrink: 0, padding: "50px 18px 12px", background: `linear-gradient(180deg, ${C.screen} 78%, rgba(10,11,13,0))` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -67,16 +69,16 @@ export function SessionDetail() {
           {/* TOTALS */}
           {view.exercises.length > 0 && (
             <div style={{ display: "flex", gap: 10 }}>
-              <StatBox label={`Volume · ${weightUnit(sys)}`} value={kgToDisplay(view.totalVolumeKg, sys, 0).toLocaleString()} accent={color} />
-              <StatBox label="Sets" value={String(view.totalSets)} />
-              <StatBox label="Reps" value={String(view.totalReps)} />
+              <StatTile variant="totals" label={`Volume · ${weightUnit(sys)}`} value={kgToDisplay(view.totalVolumeKg, sys, 0).toLocaleString()} accent={color} />
+              <StatTile variant="totals" label="Sets" value={String(view.totalSets)} />
+              <StatTile variant="totals" label="Reps" value={String(view.totalReps)} />
             </div>
           )}
           {view.cardio.length > 0 && (
             <div style={{ display: "flex", gap: 10, marginTop: view.exercises.length > 0 ? 10 : 0 }}>
-              <StatBox label={`Distance · ${distanceUnit(sys)}`} value={view.totalDistanceKm > 0 ? String(kmToDisplay(view.totalDistanceKm, sys, 2)) : "—"} accent={color} />
-              <StatBox label="Time" value={fmtClock(view.totalCardioSec)} />
-              <StatBox label="Avg pace" value={view.avgPaceSecPerKm != null && view.totalDistanceKm > 0 ? paceLabel(view.totalDistanceKm, view.totalCardioSec, sys) : "—"} />
+              <StatTile variant="totals" label={`Distance · ${distanceUnit(sys)}`} value={view.totalDistanceKm > 0 ? String(kmToDisplay(view.totalDistanceKm, sys, 2)) : "—"} accent={color} />
+              <StatTile variant="totals" label="Time" value={fmtClock(view.totalCardioSec)} />
+              <StatTile variant="totals" label="Avg pace" value={view.avgPaceSecPerKm != null && view.totalDistanceKm > 0 ? paceLabel(view.totalDistanceKm, view.totalCardioSec, sys) : "—"} />
             </div>
           )}
 
@@ -108,7 +110,7 @@ export function SessionDetail() {
           {view.muscles.length > 0 && (
             <>
               <SectionHead title="Muscles worked" right="emphasis" />
-              <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: 16, padding: "13px 15px" }}>
+              <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: radius.xl, padding: "13px 15px" }}>
                 {view.muscles.slice(0, 8).map((m) => {
                   const pct = Math.round(m.share * 100);
                   return (
@@ -117,7 +119,7 @@ export function SessionDetail() {
                         <span style={{ fontSize: 13, fontWeight: 600, color: C.ink2 }}>{m.label}</span>
                         <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: C.ink3 }}>{pct}%</span>
                       </div>
-                      <div style={{ height: 7, borderRadius: 4, background: C.inner, overflow: "hidden" }}>
+                      <div style={{ height: 7, borderRadius: radius.sm, background: C.inner, overflow: "hidden" }}>
                         <div style={{ width: `${Math.max(2, m.share * 100)}%`, height: "100%", background: color, opacity: 0.78 }} />
                       </div>
                     </div>
@@ -134,7 +136,7 @@ export function SessionDetail() {
           {view.notes && (
             <>
               <SectionHead title="Notes" />
-              <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: 16, padding: "13px 15px", fontSize: 13, color: C.sub, lineHeight: 1.55 }}>
+              <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: radius.xl, padding: "13px 15px", fontSize: 13, color: C.sub, lineHeight: 1.55 }}>
                 {view.notes}
               </div>
             </>
@@ -145,53 +147,21 @@ export function SessionDetail() {
           <div style={{ fontSize: 14, color: C.sub, textAlign: "center", lineHeight: 1.5 }}>This session is no longer available.</div>
         </div>
       )}
-    </div>
+    </FullScreenOverlay>
   );
 }
 
 // ── small pieces ─────────────────────────────────────────────────────────────
-function StatBox({ label, value, accent }: { label: string; value: string; accent?: string }) {
-  return (
-    <div style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 13, minWidth: 0 }}>
-      <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.6px" }}>{label}</div>
-      <div style={{ fontFamily: mono, fontSize: 19, fontWeight: 700, color: accent ?? C.ink, letterSpacing: "-0.5px", marginTop: 6, lineHeight: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
-    </div>
-  );
-}
-
-function CircleButton({ children, onClick, ariaLabel }: { children: ReactNode; onClick: () => void; ariaLabel: string }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-label={ariaLabel}
-      style={{ width: 38, height: 38, borderRadius: "50%", border: `1px solid ${C.line2}`, background: C.card, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SectionHead({ title, right }: { title: string; right?: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "22px 2px 11px" }}>
-      <span style={{ fontSize: 16, fontWeight: 700, color: C.ink, letterSpacing: "-0.3px" }}>{title}</span>
-      {right && <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>{right}</span>}
-    </div>
-  );
-}
-
 function ExerciseBlock({ ex, sys, onOpen }: { ex: SessionExerciseRow; sys: "metric" | "imperial"; onOpen: () => void }) {
   const wUnit = weightUnit(sys);
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: 16, padding: "13px 15px" }}>
+    <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: radius.xl, padding: "13px 15px" }}>
       <button
         onClick={onOpen}
         style={{ width: "100%", display: "flex", alignItems: "center", gap: 7, background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer", marginBottom: 9 }}
       >
         <span style={{ fontSize: 14.5, fontWeight: 700, color: C.ink }}>{ex.name}</span>
-        {ex.perArm && (
-          <span style={{ fontSize: 8.5, fontWeight: 700, color: C.blue, background: `${C.blue}1f`, padding: "1px 5px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" }}>Per arm</span>
-        )}
+        {ex.perArm && <PerArmBadge />}
         <span style={{ marginLeft: "auto", color: C.muted, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>›</span>
       </button>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

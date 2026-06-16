@@ -3,22 +3,16 @@
 //         agenda in one (a behavioral signal, separate from capability).
 //   Feed: per-set session history — the irreplaceable fuel that sharpens scores.
 import { usePeak } from "../store";
+import { est1RM } from "../engine/math";
+import { SCREEN_STYLE, contentPad } from "./layoutPresets";
 import { C, mono, WORKOUT_THEME } from "../theme";
-import { Card, SectionTitle, Kicker, PrimaryButton, GhostButton } from "../components/ui";
+import { Card, SectionTitle, Kicker, PrimaryButton, GhostButton, PerArmBadge } from "../components/ui";
 import { WeeklyAgenda } from "../components/WeeklyAgenda";
 import { EllipsisMenu } from "../components/SessionMenu";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { isPerArm } from "../data/exerciseCatalog";
 import { fmtClock, fmtDistanceKm, kgToDisplay, paceLabel, weightUnit } from "../units";
 import type { Session } from "../types";
-
-const SCREEN: React.CSSProperties = {
-  position: "absolute", inset: 0, overflowY: "auto", padding: "58px 0 104px",
-  animation: "scrIn .28s ease",
-};
-const PAD: React.CSSProperties = { padding: "0 18px" };
-
-const est1RM = (weight: number, reps: number) => weight * (1 + reps / 30);
 
 export function Log() {
   const s = usePeak();
@@ -30,14 +24,14 @@ export function Log() {
   const monthDay = now.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
   return (
-    <div style={SCREEN}>
-      <div style={PAD}>
+    <div style={SCREEN_STYLE}>
+      <div style={contentPad()}>
         <Kicker>{weekdayLong} · {monthDay}</Kicker>
         <div style={{ fontSize: 28, fontWeight: 700, color: C.ink, letterSpacing: "-0.6px", margin: "2px 0 14px" }}>Today</div>
         <WeeklyAgenda />
       </div>
 
-      <div style={{ ...PAD, paddingTop: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ ...contentPad(), paddingTop: 18, display: "flex", flexDirection: "column", gap: 10 }}>
         {s.activeSession ? (
           <button
             onClick={() => s.set({ activeOpen: true })}
@@ -58,14 +52,14 @@ export function Log() {
         </GhostButton>
       </div>
 
-      <div style={{ ...PAD, paddingTop: 20 }}>
+      <div style={{ ...contentPad(), paddingTop: 20 }}>
         <SectionTitle sub="Every set you log sharpens your muscle map and feeds your capability scores.">
           Session feed
         </SectionTitle>
       </div>
 
       {sessions.length === 0 ? (
-        <div style={PAD}>
+        <div style={contentPad()}>
           <Card style={{ textAlign: "center", padding: "30px 20px" }}>
             <div style={{ fontSize: 14, color: C.sub, lineHeight: 1.55 }}>
               No sessions yet. Log your first to start sharpening your muscle map and momentum.
@@ -73,7 +67,7 @@ export function Log() {
           </Card>
         </div>
       ) : (
-        <div style={{ ...PAD, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ ...contentPad(), display: "flex", flexDirection: "column", gap: 12 }}>
           {sessions.map((sess) => <SessionCard key={sess.id} sess={sess} />)}
         </div>
       )}
@@ -135,11 +129,7 @@ function SessionCard({ sess }: { sess: Session }) {
                 }}
               >
                 <span style={{ fontSize: 13, fontWeight: 700, color: C.ink2 }}>{ex?.name ?? entry.exerciseId}</span>
-                {perArm && (
-                  <span style={{ fontSize: 8.5, fontWeight: 700, color: C.blue, background: `${C.blue}1f`, padding: "1px 5px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                    Per arm
-                  </span>
-                )}
+                {perArm && <PerArmBadge />}
                 {ex && <span style={{ marginLeft: "auto", color: C.muted, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>›</span>}
               </button>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
