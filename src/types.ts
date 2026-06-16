@@ -54,6 +54,29 @@ export type MuscleGroup =
   | "forearms" | "lat" | "trap" | "lower_back" | "abs" | "obliques"
   | "glutes" | "quads" | "hamstrings" | "calves" | "tibialis";
 
+// Granular sub-region (head/portion) of a MuscleGroup — the ATTRIBUTION layer below
+// the scoring groups (§4.3 extension). Different exercises bias these differently
+// (lower vs upper chest, long vs lateral triceps head, VL vs VM quad). Metadata,
+// parent mapping, and per-exercise emphasis live in src/data/muscleRegions.ts; the
+// regions of any group always sum back to that group's existing muscleWeight, so the
+// scoring spine is untouched. Whole-muscle groups (delts, lower back, tibialis) do not
+// subdivide — their region id equals the group id.
+export type MuscleRegion =
+  | "chest_upper" | "chest_mid" | "chest_lower"
+  | "triceps_long" | "triceps_lateral" | "triceps_medial"
+  | "biceps_long_head" | "biceps_short_head" | "biceps_brachialis"
+  | "lat_upper" | "lat_lower"
+  | "trap_upper" | "trap_mid" | "trap_lower"
+  | "quads_rectus_femoris" | "quads_vastus_lateralis" | "quads_vastus_medialis"
+  | "hamstrings_lateral" | "hamstrings_medial"
+  | "glutes_max_lower" | "glutes_max_upper" | "glutes_med_min"
+  | "abs_upper" | "abs_lower" | "abs_deep"
+  | "obliques_external" | "obliques_internal"
+  | "forearms_flexors" | "forearms_extensors" | "forearms_brachioradialis"
+  | "calves_gastroc_medial" | "calves_gastroc_lateral" | "calves_soleus"
+  // whole-muscle regions (group does not subdivide):
+  | "front_delt" | "side_delt" | "rear_delt" | "lower_back" | "tibialis";
+
 export type MovementPattern =
   | "horizontal_push" | "vertical_push" | "horizontal_pull" | "vertical_pull"
   | "squat" | "hinge" | "lunge" | "carry" | "rotation" | "isolation"
@@ -369,6 +392,30 @@ export type RoutineDef = {
   createdAt?: string;          // ISO-8601, for user-saved routines
 };
 
+// ── Weekly routine plan (§6.4 — recurring weekly agenda) ─────────────────────
+// A recurring 7-day template the Feed's "This Week" card renders against. Each
+// weekday (index 0 = Monday … 6 = Sunday) holds zero or more plan items; an empty
+// day is a rest day. A Gym item links to a RoutineDef (so "Start" can seed the live
+// session); cardio / sport / mobility items carry a free-text title + detail.
+//
+// Completion is EARNED, never fabricated: a planned day reads "done" when a real
+// Session is logged that calendar day, OR the user explicitly ticks it off — those
+// manual ticks live in `completions` as "YYYY-MM-DD" local-day keys.
+export type WeeklyPlanItem = {
+  id: string;
+  type: WorkoutType;           // drives the accent + status semantics (Gym/Cardio/Sport/Mobility)
+  routineId?: string;          // FK → RoutineDef.id when type === "Gym" and linked to a routine
+  title: string;               // display name, e.g. "Push Day", "Run · 5K"
+  detail?: string;             // sub line, e.g. "Tempo · 28 min" (Gym items derive it live)
+};
+
+export type WeeklyPlan = {
+  days: WeeklyPlanItem[][];    // length 7, index 0 = Monday … 6 = Sunday
+  completions: string[];       // "YYYY-MM-DD" local days manually ticked done
+  createdAt: string;           // ISO-8601 — when the plan was first set up
+  updatedAt: string;           // ISO-8601 — last structural edit
+};
+
 // ── Capability scores (§2.2, §6.6) ───────────────────────────────────────────
 export type ScorePoint = {
   at: string;                  // ISO-8601
@@ -574,6 +621,7 @@ export type PeakData = {
   biometric: BiometricProfile | null;
   sessions: Session[];
   routines: RoutineDef[];      // user-saved Gym templates (built-ins ship as data)
+  weeklyPlan: WeeklyPlan | null;  // recurring weekly routine; null = not set up yet
   leafScores: Record<LeafId, LeafScore>;
   muscleEstimates: Partial<Record<MuscleGroup, MuscleGroupEstimate>>;
   benchmarkResults: BenchmarkResult[];

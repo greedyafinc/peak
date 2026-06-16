@@ -10,7 +10,7 @@ import { useMemo, type ReactNode } from "react";
 import { usePeak } from "../store";
 import { C, mono } from "../theme";
 import { pctLabel } from "./ui";
-import { buildExerciseDetail, type DetailTip } from "../engine/exerciseDetail";
+import { buildExerciseDetail, type DetailTip, type MuscleWorked } from "../engine/exerciseDetail";
 import type { ExerciseCategory } from "../data/exerciseCatalog";
 import { ProjectionChart, BellCurve, Sparkline } from "../viz/DetailCharts";
 
@@ -147,6 +147,21 @@ export function ExerciseDetail() {
             </div>
           )}
 
+          {/* MUSCLES WORKED — granular per-region breakdown */}
+          {view.musclesWorked.length > 0 && (
+            <>
+              <SectionHead title="Muscles worked" right="by region" />
+              <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: 16, padding: "6px 15px 13px" }}>
+                {view.musclesWorked.map((m, i) => (
+                  <MuscleRow key={m.group} m={m} accent={color} first={i === 0} />
+                ))}
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 11, lineHeight: 1.5 }}>
+                  How this lift's work splits across each muscle and its heads — the same attribution Peak uses to infer your strength.
+                </div>
+              </div>
+            </>
+          )}
+
           {/* PAST EFFORTS */}
           {view.history.length > 0 && (
             <>
@@ -223,6 +238,46 @@ function SectionHead({ title, right }: { title: string; right?: string }) {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "22px 2px 11px" }}>
       <span style={{ fontSize: 16, fontWeight: 700, color: C.ink, letterSpacing: "-0.3px" }}>{title}</span>
       {right && <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>{right}</span>}
+    </div>
+  );
+}
+
+function MuscleRow({ m, accent, first }: { m: MuscleWorked; accent: string; first: boolean }) {
+  const pct = Math.round(m.share * 100);
+  return (
+    <div style={{ paddingTop: first ? 8 : 12, marginTop: first ? 0 : 12, borderTop: first ? "none" : `1px solid ${C.line3}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: "-0.2px" }}>{m.label}</span>
+          <span style={{
+            fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase",
+            color: m.primary ? accent : C.muted, background: m.primary ? hexA(accent, 0.13) : "transparent",
+            border: m.primary ? "none" : `1px solid ${C.line2}`, padding: "2px 6px", borderRadius: 5,
+          }}>
+            {m.primary ? "Primary" : "Assist"}
+          </span>
+        </div>
+        <span style={{ fontFamily: mono, fontSize: 12, fontWeight: 700, color: C.ink3, flexShrink: 0 }}>{pct}%</span>
+      </div>
+      {/* within-group split across anatomical sub-regions */}
+      <div style={{ display: "flex", height: 9, borderRadius: 5, overflow: "hidden", marginTop: 8, background: C.inner }}>
+        {m.regions.length > 0
+          ? m.regions.map((r, i) => (
+              <div key={r.id} title={`${r.label} ${Math.round(r.share * 100)}%`}
+                style={{ width: `${r.share * 100}%`, background: hexA(accent, Math.max(0.3, 0.85 - i * 0.22)), borderRight: i < m.regions.length - 1 ? `1.5px solid ${C.card}` : "none" }} />
+            ))
+          : <div style={{ width: "100%", background: hexA(accent, 0.66) }} />}
+      </div>
+      {m.regions.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 12px", marginTop: 7 }}>
+          {m.regions.map((r) => (
+            <span key={r.id} style={{ fontSize: 11, color: C.sub }}>
+              <span style={{ color: C.ink3, fontWeight: 600 }}>{r.label}</span>
+              <span style={{ fontFamily: mono, color: C.muted }}> {Math.round(r.share * 100)}%</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

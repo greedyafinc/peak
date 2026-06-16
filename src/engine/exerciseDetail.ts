@@ -11,8 +11,13 @@
 // muscle (or a matching benchmark) is actually scored, no trend strip from a single
 // session. The design's synthetic numbers are intentionally replaced by these.
 
-import type { PeakData, MuscleGroup } from "../types";
+import type { PeakData, MuscleGroup, MuscleRegion, ExerciseDef } from "../types";
 import { EXERCISE_BY_ID } from "../data/exercises";
+import {
+  groupHasSubRegions,
+  regionSharesForExercise,
+  regionLabel,
+} from "../data/muscleRegions";
 import {
   categoryOf,
   alternativesFor,
@@ -55,6 +60,44 @@ export type DetailHero = {
 
 export type DetailTip = { kind: "load" | "assist" | "rest"; title: string; body: string };
 
+// Granular "muscles worked" breakdown — each group the exercise trains, with its share
+// of the lift and the within-group split across anatomical sub-regions (lower vs upper
+// chest, long vs lateral triceps head…). Derived from the same attribution coefficients
+// the scoring engine uses, so it never claims more work than the lift actually does.
+export type RegionShare = { id: MuscleRegion; label: string; share: number };
+export type MuscleWorked = {
+  group: MuscleGroup;
+  label: string;
+  share: number;            // group's share of the whole lift (0..1)
+  primary: boolean;         // a primary mover for this exercise
+  regions: RegionShare[];   // within-group split (sums to 1); [] for non-subdividing groups
+};
+
+/** Ordered (heaviest first) muscle-by-region breakdown for an exercise. */
+export function buildMusclesWorked(ex: ExerciseDef): MuscleWorked[] {
+  const primary = new Set(ex.primaryMuscles);
+  const groups = (Object.keys(ex.muscleWeights) as MuscleGroup[])
+    .filter((g) => (ex.muscleWeights[g] ?? 0) > 0)
+    .sort((a, b) => (ex.muscleWeights[b] ?? 0) - (ex.muscleWeights[a] ?? 0));
+  return groups.map((g) => {
+    let regions: RegionShare[] = [];
+    if (groupHasSubRegions(g)) {
+      const split = regionSharesForExercise(ex, g);
+      regions = (Object.keys(split) as MuscleRegion[])
+        .map((id) => ({ id, label: regionLabel(id), share: split[id] ?? 0 }))
+        .filter((r) => r.share > 0)
+        .sort((a, b) => b.share - a.share);
+    }
+    return {
+      group: g,
+      label: muscleLabel(g),
+      share: ex.muscleWeights[g] ?? 0,
+      primary: primary.has(g),
+      regions,
+    };
+  });
+}
+
 export type ExerciseDetailView = {
   kind: "strength" | "cardio";
   name: string;
@@ -76,6 +119,7 @@ export type ExerciseDetailView = {
 
   history: { date: string; main: string; sub: string; pr: boolean }[];
   tips: DetailTip[];
+  musclesWorked: MuscleWorked[];   // granular per-region breakdown ([] for cardio)
 };
 
 // ── small pure helpers ───────────────────────────────────────────────────────
@@ -238,6 +282,7 @@ function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView 
     spark: series.length >= 2 ? series.map((e) => metricOf(e)) : null,
     history,
     tips,
+    musclesWorked: buildMusclesWorked(ex),
   };
 }
 
@@ -343,6 +388,7 @@ function cardioDetail(data: PeakData, spec: { sessionId: string; cardioId: strin
       { kind: "assist", title: "Shore up your lower legs", body: "Calf and tibialis strength protects your stride as mileage climbs — a short strength block pays off here." },
       { kind: "rest", title: "Ease into the first kilometre", body: "Splits often start a touch fast. Settling in gently early tends to buy a faster finish." },
     ],
+    musclesWorked: [],
   };
 }
 

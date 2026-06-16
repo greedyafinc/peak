@@ -56,7 +56,11 @@ export {
 export { computeHeadline, rollupDimension } from "./rollup";
 export type { DimensionRollup, SubcategoryRollup, Eligibility } from "./rollup";
 export { inferMuscleStrength } from "./infer";
+export { regionTrainingForGroup } from "./regions";
+export type { RegionTraining, RegionTrainingResult } from "./regions";
 export { computeConsistency } from "./consistency";
+export { computeWeekStatus, mondayIndex, planIsEmpty, EMPTY_WEEK_DAYS } from "./weeklyPlan";
+export type { WeekStatus, WeekDayStatus, DayKind } from "./weeklyPlan";
 export { project, projectToTarget } from "./projection";
 export {
   compositionSnapshotFrom,

@@ -8,9 +8,11 @@ import {
   Card, TierBadge, StatTile, SectionTitle, Kicker, Chip, PrimaryButton,
   ConfidenceMeter, PercentileBar, pctLabel, pct100,
 } from "../components/ui";
-import { tierForPercentile } from "../engine";
+import { tierForPercentile, regionTrainingForGroup, type RegionTrainingResult } from "../engine";
 import { BodyMap, type BodyMuscle } from "../viz/BodyMap";
+import { SUBREGION_BANDS } from "../viz/bodyRegions";
 import { MUSCLE_TO_SVG, SVG_TO_MUSCLE } from "../data/muscleMap";
+import { groupHasSubRegions, REGION_BY_ID } from "../data/muscleRegions";
 import { ALL_MUSCLES } from "../data/capabilityTree";
 import { fmtWeight, kgToDisplay, weightUnit } from "../units";
 import type { BfBand, BandDefinition, MuscleGroup, MuscleGroupEstimate } from "../types";
@@ -65,6 +67,25 @@ export function Body() {
     ? (selMg ? MUSCLE_TO_SVG[selMg].label : s.selMuscle)
     : null;
 
+  // Which heads of the selected muscle the user actually trains (real logged sets).
+  const regionTraining = useMemo(
+    () => (selMg && groupHasSubRegions(selMg) ? regionTrainingForGroup(data.sessions, selMg) : null),
+    [selMg, data.sessions],
+  );
+
+  // Per-region heat (0–100) for the selected muscle's bands: the most-trained head burns
+  // hottest, the rest scale relative to it. Null until the muscle has logged volume.
+  const selRegionScores = useMemo<Record<string, number> | null>(() => {
+    if (!regionTraining || regionTraining.totalSets <= 0) return null;
+    const max = Math.max(...regionTraining.regions.map((r) => r.share), 0);
+    if (max <= 0) return null;
+    const out: Record<string, number> = {};
+    for (const r of regionTraining.regions) out[r.region] = Math.round((r.share / max) * 100);
+    return out;
+  }, [regionTraining]);
+
+  const regionShadeActive = !!(s.selMuscle && selRegionScores && SUBREGION_BANDS[s.selMuscle]);
+
   return (
     <div style={SCREEN}>
       <div style={PAD}>
@@ -84,8 +105,20 @@ export function Body() {
       {/* ── Heat map ── */}
       <div style={{ ...PAD, paddingTop: 6, paddingBottom: 10 }}>
         <Card style={{ padding: "16px 12px 12px", background: C.inner }}>
-          <BodyMap muscles={muscles} selected={s.selMuscle} onSelect={s.selectMuscle} view={s.bodyView} />
+          <BodyMap
+            muscles={muscles}
+            selected={s.selMuscle}
+            onSelect={s.selectMuscle}
+            view={s.bodyView}
+            regionKey={s.selMuscle}
+            regionScores={selRegionScores ?? undefined}
+          />
           <Legend />
+          <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
+            {regionShadeActive
+              ? `${selLabel} shaded by where you train it most — chest, abs, back and traps split into regions.`
+              : "Chest, abs, back and traps split into sub-regions. Tap a muscle to see where you train it most."}
+          </div>
         </Card>
       </div>
 
@@ -131,6 +164,8 @@ export function Body() {
                 <div style={{ marginTop: 6 }}>Log sets that train this muscle and Peak will infer its strength here — no fabricated score until you do.</div>
               </div>
             )}
+
+            {regionTraining && <RegionEmphasis rt={regionTraining} muscle={selLabel ?? ""} />}
           </Card>
         </div>
       )}
@@ -158,6 +193,56 @@ export function Body() {
               Add composition
             </PrimaryButton>
           </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sub-region training emphasis (which heads of a muscle you actually train) ──
+function RegionEmphasis({ rt, muscle }: { rt: RegionTrainingResult; muscle: string }) {
+  const trained = rt.totalSets > 0;
+  return (
+    <div style={{ marginTop: 16, borderTop: `1px solid ${C.line2}`, paddingTop: 13 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
+        <span style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.7px" }}>Sub-regions you train</span>
+        {trained && <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{Math.round(rt.totalSets)} sets</span>}
+      </div>
+
+      {trained ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+          {rt.regions.map((r) => {
+            const pct = Math.round(r.share * 100);
+            return (
+              <div key={r.region} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ width: 96, flexShrink: 0, fontSize: 12, color: C.ink3, fontWeight: 600 }}>{r.label}</span>
+                <div style={{ flex: 1, height: 8, borderRadius: 4, background: C.inner, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.max(pct, 2)}%`, height: "100%", background: C.accent, opacity: r.share > 0 ? 1 : 0.25, borderRadius: 4 }} />
+                </div>
+                <span style={{ width: 34, flexShrink: 0, textAlign: "right", fontFamily: mono, fontSize: 11, color: r.share > 0 ? C.ink3 : C.muted }}>{pct}%</span>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 11, color: C.sub, marginTop: 3, lineHeight: 1.5 }}>
+            Share of your logged {muscle.toLowerCase()} volume by region — a low bar is a head you could train more.
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+            {rt.regions.map((r) => {
+              const def = REGION_BY_ID[r.region];
+              return (
+                <span key={r.region} title={def?.anatomicalName}
+                  style={{ fontSize: 11, color: C.sub, border: `1px solid ${C.line2}`, borderRadius: 14, padding: "4px 10px" }}>
+                  {r.label}
+                </span>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.sub, marginTop: 10, lineHeight: 1.5 }}>
+            Log sets that train {muscle.toLowerCase()} and Peak will show which of these heads you emphasize.
+          </div>
         </div>
       )}
     </div>

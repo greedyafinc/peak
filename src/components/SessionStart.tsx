@@ -3,12 +3,13 @@
 // your own routines here too. A quiet link still reaches the retrospective quick-log.
 
 import { usePeak } from "../store";
-import { C, mono } from "../theme";
+import { C, mono, WORKOUT_THEME } from "../theme";
 import { Sheet } from "./ui";
-import { BUILTIN_ROUTINES } from "../data/routines";
+import { BUILTIN_ROUTINES, ROUTINE_BY_ID } from "../data/routines";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { categoryOf } from "../data/exerciseCatalog";
-import type { RoutineDef } from "../types";
+import { mondayIndex } from "../engine";
+import type { RoutineDef, WeeklyPlanItem } from "../types";
 
 export function StartSheet() {
   const s = usePeak();
@@ -32,6 +33,8 @@ export function StartSheet() {
           <span style={{ fontSize: 11, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.5px" }}>Resume</span>
         </button>
       )}
+
+      <TodayPlan />
 
       <button
         onClick={() => s.startSession()}
@@ -89,6 +92,58 @@ export function StartSheet() {
         Log a past session or cardio instead
       </button>
     </Sheet>
+  );
+}
+
+// Today's planned workouts (from the weekly routine) — surfaced first so starting
+// a workout shows the day's plan before the full routine list.
+function TodayPlan() {
+  const s = usePeak();
+  const items = s.data.weeklyPlan?.days[mondayIndex(new Date())] ?? [];
+  if (items.length === 0) return null;
+
+  const resolve = (it: WeeklyPlanItem) => {
+    const color = WORKOUT_THEME[it.type].color;
+    if (it.routineId) {
+      const r = ROUTINE_BY_ID[it.routineId] ?? s.data.routines.find((x) => x.id === it.routineId);
+      if (r) return { title: r.name, sub: `${r.exercises.length} exercise${r.exercises.length === 1 ? "" : "s"}`, color, routineId: r.id };
+    }
+    return { title: it.title, sub: it.detail, color, routineId: undefined as string | undefined };
+  };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <Kicker>Today’s plan</Kicker>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 10 }}>
+        {items.map((it) => {
+          const r = resolve(it);
+          return (
+            <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 10, background: C.inner, border: `1px solid ${C.line2}`, borderRadius: 14, padding: "12px 13px" }}>
+              <span style={{ width: 3, alignSelf: "stretch", borderRadius: 2, background: r.color, minHeight: 30 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{r.title}</div>
+                <div style={{ fontSize: 11, color: C.muted, fontFamily: mono, marginTop: 2 }}>{it.type}{r.sub ? ` · ${r.sub}` : ""}</div>
+              </div>
+              {r.routineId ? (
+                <button
+                  onClick={() => s.startSession({ routineId: r.routineId })}
+                  style={{ fontSize: 12, fontWeight: 700, color: "#0a0b0d", background: C.accent, border: "none", borderRadius: 9, padding: "8px 13px", cursor: "pointer" }}
+                >
+                  Start
+                </button>
+              ) : (
+                <button
+                  onClick={() => s.set({ startOpen: false, logOpen: true })}
+                  style={{ fontSize: 12, fontWeight: 700, color: r.color, background: `${r.color}1f`, border: "none", borderRadius: 9, padding: "8px 13px", cursor: "pointer" }}
+                >
+                  Log
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
