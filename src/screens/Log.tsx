@@ -14,6 +14,10 @@ import { isPerArm } from "../data/exerciseCatalog";
 import { fmtClock, fmtDistanceKm, kgToDisplay, paceLabel, weightUnit } from "../units";
 import type { Session } from "../types";
 
+// Feed cards stay glanceable: a session shows at most this many exercises inline,
+// and the rest live in the full-page session detail (tap the card / "+N more").
+const MAX_FEED_EXERCISES = 3;
+
 export function Log() {
   const s = usePeak();
   const { data } = s;
@@ -113,7 +117,7 @@ function SessionCard({ sess }: { sess: Session }) {
 
       {/* body */}
       <div style={{ padding: "0 16px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
-        {sess.entries.map((entry) => {
+        {sess.entries.slice(0, MAX_FEED_EXERCISES).map((entry) => {
           const ex = EXERCISE_BY_ID[entry.exerciseId];
           const perArm = ex ? isPerArm(ex) : false;
           return (
@@ -151,6 +155,21 @@ function SessionCard({ sess }: { sess: Session }) {
             </div>
           );
         })}
+
+        {/* overflow → the full session detail holds the rest */}
+        {sess.entries.length > MAX_FEED_EXERCISES && (
+          <button
+            onClick={() => s.set({ sessionDetailId: sess.id })}
+            style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+              background: "none", border: "none", padding: "2px 0", cursor: "pointer",
+              fontFamily: mono, fontSize: 12, fontWeight: 700, letterSpacing: "0.3px", color: C.sub,
+            }}
+          >
+            +{sess.entries.length - MAX_FEED_EXERCISES} more exercise{sess.entries.length - MAX_FEED_EXERCISES === 1 ? "" : "s"}
+            <span style={{ color: C.muted, fontSize: 15, fontWeight: 700, lineHeight: 1 }}>›</span>
+          </button>
+        )}
 
         {sess.cardio?.map((cs) => {
           const durSec = cs.duration.value * 60; // cardio duration canonical = minutes
