@@ -3,23 +3,20 @@
 //   B) Body composition (§3.3–§3.6) — FFMI + BF band, ideal weight rises with muscle.
 import { useMemo } from "react";
 import { usePeak } from "../store";
-import { C, mono, heat } from "../theme";
+import { SCREEN_STYLE, contentPad } from "./layoutPresets";
+import { C, mono, heat, radius } from "../theme";
 import {
-  Card, TierBadge, StatTile, SectionTitle, Kicker, Chip, PrimaryButton,
+  Card, TierBadge, StatTile, SectionHeader, Chip, PrimaryButton,
   ConfidenceMeter, PercentileBar, pctLabel, pct100,
 } from "../components/ui";
-import { tierForPercentile } from "../engine";
+import { tierForPercentile, regionTrainingForGroup, type RegionTrainingResult } from "../engine";
 import { BodyMap, type BodyMuscle } from "../viz/BodyMap";
+import { SUBREGION_BANDS } from "../viz/bodyRegions";
 import { MUSCLE_TO_SVG, SVG_TO_MUSCLE } from "../data/muscleMap";
+import { groupHasSubRegions, REGION_BY_ID } from "../data/muscleRegions";
 import { ALL_MUSCLES } from "../data/capabilityTree";
 import { fmtWeight, kgToDisplay, weightUnit } from "../units";
 import type { BfBand, BandDefinition, MuscleGroup, MuscleGroupEstimate } from "../types";
-
-const SCREEN: React.CSSProperties = {
-  position: "absolute", inset: 0, overflowY: "auto", padding: "58px 0 104px",
-  animation: "scrIn .28s ease",
-};
-const PAD: React.CSSProperties = { padding: "0 18px" };
 
 const BAND_LABEL: Record<BfBand, string> = {
   essential: "Essential", athletic: "Athletic", fitness: "Fitness", average: "Average", high: "High",
@@ -65,33 +62,64 @@ export function Body() {
     ? (selMg ? MUSCLE_TO_SVG[selMg].label : s.selMuscle)
     : null;
 
+  // Which heads of the selected muscle the user actually trains (real logged sets).
+  const regionTraining = useMemo(
+    () => (selMg && groupHasSubRegions(selMg) ? regionTrainingForGroup(data.sessions, selMg) : null),
+    [selMg, data.sessions],
+  );
+
+  // Per-region heat (0–100) for the selected muscle's bands: the most-trained head burns
+  // hottest, the rest scale relative to it. Null until the muscle has logged volume.
+  const selRegionScores = useMemo<Record<string, number> | null>(() => {
+    if (!regionTraining || regionTraining.totalSets <= 0) return null;
+    const max = Math.max(...regionTraining.regions.map((r) => r.share), 0);
+    if (max <= 0) return null;
+    const out: Record<string, number> = {};
+    for (const r of regionTraining.regions) out[r.region] = Math.round((r.share / max) * 100);
+    return out;
+  }, [regionTraining]);
+
+  const regionShadeActive = !!(s.selMuscle && selRegionScores && SUBREGION_BANDS[s.selMuscle]);
+
   return (
-    <div style={SCREEN}>
-      <div style={PAD}>
-        <Kicker>Body Map · §4.3</Kicker>
-        <div style={{ height: 8 }} />
-        <SectionTitle sub="Per-muscle strength inferred from the sets you log — never a guess about an untested area.">
-          Strength heat map
-        </SectionTitle>
+    <div style={SCREEN_STYLE}>
+      <div style={contentPad()}>
+        <SectionHeader
+          kicker="Body Map · §4.3"
+          title="Strength heat map"
+          sub="Per-muscle strength inferred from the sets you log — never a guess about an untested area."
+        />
       </div>
 
       {/* ── Front / Back toggle ── */}
-      <div style={{ ...PAD, display: "flex", gap: 8, marginBottom: 4 }}>
+      <div style={{ ...contentPad(), display: "flex", gap: 8, marginBottom: 4 }}>
         <Chip active={s.bodyView === "front"} onClick={() => s.set({ bodyView: "front" })}>Front</Chip>
         <Chip active={s.bodyView === "back"} onClick={() => s.set({ bodyView: "back" })}>Back</Chip>
       </div>
 
       {/* ── Heat map ── */}
-      <div style={{ ...PAD, paddingTop: 6, paddingBottom: 10 }}>
+      <div style={{ ...contentPad(), paddingTop: 6, paddingBottom: 10 }}>
         <Card style={{ padding: "16px 12px 12px", background: C.inner }}>
-          <BodyMap muscles={muscles} selected={s.selMuscle} onSelect={s.selectMuscle} view={s.bodyView} />
+          <BodyMap
+            muscles={muscles}
+            selected={s.selMuscle}
+            onSelect={s.selectMuscle}
+            view={s.bodyView}
+            regionKey={s.selMuscle}
+            regionScores={selRegionScores ?? undefined}
+          />
           <Legend />
+          <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
+            {regionShadeActive
+              ? `${selLabel} shaded by where you train it most — chest, abs, back and traps split into regions.`
+              : "Chest, abs, back and traps split into sub-regions. Tap a muscle to see where you train it most."}
+          </div>
         </Card>
       </div>
 
       {/* ── Selected muscle detail ── */}
       {selLabel && (
-        <div style={{ ...PAD, paddingBottom: 12 }}>
+        <div style={{ ...contentPad(), paddingBottom: 12 }}>
           <Card glow={selEst?.tier ? heat(pct100(selEst.percentileRaw)) : undefined}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: C.ink, letterSpacing: "-0.3px" }}>{selLabel}</div>
@@ -131,23 +159,25 @@ export function Body() {
                 <div style={{ marginTop: 6 }}>Log sets that train this muscle and Peak will infer its strength here — no fabricated score until you do.</div>
               </div>
             )}
+
+            {regionTraining && <RegionEmphasis rt={regionTraining} muscle={selLabel ?? ""} />}
           </Card>
         </div>
       )}
 
       {/* ── B) Body composition ── */}
-      <div style={{ ...PAD, paddingTop: 14 }}>
-        <Kicker>Body Composition · §3</Kicker>
-        <div style={{ height: 8 }} />
-        <SectionTitle sub="Fat-vs-lean — FFMI and a healthy body-fat band, never BMI. Bodyweight is never used to score strength.">
-          Composition
-        </SectionTitle>
+      <div style={{ ...contentPad(), paddingTop: 14 }}>
+        <SectionHeader
+          kicker="Body Composition · §3"
+          title="Composition"
+          sub="Fat-vs-lean — FFMI and a healthy body-fat band, never BMI. Bodyweight is never used to score strength."
+        />
       </div>
 
       {comp && comp.ffmi && comp.bodyFatPct ? (
         <Composition comp={comp} />
       ) : (
-        <div style={{ ...PAD }}>
+        <div style={{ ...contentPad() }}>
           <Card style={{ textAlign: "center" }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.ink, marginBottom: 6 }}>Unlock composition</div>
             <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.5, marginBottom: 16 }}>
@@ -158,6 +188,56 @@ export function Body() {
               Add composition
             </PrimaryButton>
           </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sub-region training emphasis (which heads of a muscle you actually train) ──
+function RegionEmphasis({ rt, muscle }: { rt: RegionTrainingResult; muscle: string }) {
+  const trained = rt.totalSets > 0;
+  return (
+    <div style={{ marginTop: 16, borderTop: `1px solid ${C.line2}`, paddingTop: 13 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
+        <span style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.7px" }}>Sub-regions you train</span>
+        {trained && <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{Math.round(rt.totalSets)} sets</span>}
+      </div>
+
+      {trained ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+          {rt.regions.map((r) => {
+            const pct = Math.round(r.share * 100);
+            return (
+              <div key={r.region} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ width: 96, flexShrink: 0, fontSize: 12, color: C.ink3, fontWeight: 600 }}>{r.label}</span>
+                <div style={{ flex: 1, height: 8, borderRadius: radius.sm, background: C.inner, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.max(pct, 2)}%`, height: "100%", background: C.accent, opacity: r.share > 0 ? 1 : 0.25, borderRadius: radius.sm }} />
+                </div>
+                <span style={{ width: 34, flexShrink: 0, textAlign: "right", fontFamily: mono, fontSize: 11, color: r.share > 0 ? C.ink3 : C.muted }}>{pct}%</span>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 11, color: C.sub, marginTop: 3, lineHeight: 1.5 }}>
+            Share of your logged {muscle.toLowerCase()} volume by region — a low bar is a head you could train more.
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+            {rt.regions.map((r) => {
+              const def = REGION_BY_ID[r.region];
+              return (
+                <span key={r.region} title={def?.anatomicalName}
+                  style={{ fontSize: 11, color: C.sub, border: `1px solid ${C.line2}`, borderRadius: 14, padding: "4px 10px" }}>
+                  {r.label}
+                </span>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.sub, marginTop: 10, lineHeight: 1.5 }}>
+            Log sets that train {muscle.toLowerCase()} and Peak will show which of these heads you emphasize.
+          </div>
         </div>
       )}
     </div>
@@ -191,7 +271,7 @@ function Composition({ comp }: { comp: NonNullable<ReturnType<typeof usePeak>["d
   const ideal = comp.derivedIdealWeight;
 
   return (
-    <div style={PAD}>
+    <div style={contentPad()}>
       {/* stat tiles */}
       <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
         <StatTile value={comp.ffmi.value.toFixed(1)} label="FFMI kg/m²" color={C.accent} />
@@ -222,7 +302,7 @@ function Composition({ comp }: { comp: NonNullable<ReturnType<typeof usePeak>["d
             <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>Body-fat band</div>
             <span style={{
               fontSize: 11, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase",
-              padding: "4px 10px", borderRadius: 20, color: BAND_COLOR[comp.bfBand], background: `${BAND_COLOR[comp.bfBand]}1f`,
+              padding: "4px 10px", borderRadius: radius.xxl, color: BAND_COLOR[comp.bfBand], background: `${BAND_COLOR[comp.bfBand]}1f`,
             }}>
               {BAND_LABEL[comp.bfBand]}
             </span>
@@ -278,7 +358,7 @@ function BfBandBar({ band, bf }: { band: BandDefinition; bf: number }) {
         {/* user marker */}
         <div style={{
           position: "absolute", left: `calc(${markerPct}% - 7px)`, top: -3,
-          width: 14, height: 20, borderRadius: 4, background: C.ink,
+          width: 14, height: 20, borderRadius: radius.sm, background: C.ink,
           border: `2px solid ${C.screen}`, boxShadow: "0 0 8px rgba(0,0,0,0.6)",
         }} />
       </div>

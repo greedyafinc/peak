@@ -24,6 +24,7 @@ import { buildCohort } from "./cohort";
 import { lookupCohortDist } from "../data/distributions";
 import { bandDefinitionForSex } from "../data/distributions/composition";
 import { percentileInGaussian, tierForPercentile, cappedOf, leafConfidence, distributionDepthOf } from "./score";
+import { round1 } from "./math";
 import { PEAK_CAP } from "../constants";
 
 // ── Primitives (§3.3) ───────────────────────────────────────────────────────
@@ -63,6 +64,28 @@ export function bfBandOf(bodyFatPct: number, band: BandDefinition): BfBand {
 /** §3.6.1 — is the user below the essential-fat floor (triggers the guard)? */
 export function belowEssentialFloor(bodyFatPct: number, band: BandDefinition): boolean {
   return toBfFraction(bodyFatPct) < band.essentialFloorBf;
+}
+
+/**
+ * §3.6 — the body-fat value to PERCENTILE against the population BF Gaussian, so the
+ * leaf is scored as a TARGET BAND with a healthy floor rather than "leaner is always
+ * better". Without this transform a raw `lowerIsBetter` percentile rewards sub-essential
+ * leanness as ~99th percentile (the §3.6 violation). The transform:
+ *   • above the target center → score the real BF% (leaner reads better through the
+ *     overweight→fit range, exactly as the population curve says);
+ *   • between the essential floor and the target center → PLATEAU at the target center
+ *     (you've reached ideal leanness; being leaner is not "more capable", §3.4);
+ *   • below the essential floor → REFLECT past the center (center + (floor − bf)) so a
+ *     dangerously-lean reading scores BELOW the healthy target, never above it.
+ * Fed through percentileInGaussian with the bf_band dist's lowerIsBetter=true.
+ */
+export function effectiveBfForScoring(bodyFatPct: number, band: BandDefinition): number {
+  const bf = toBfFraction(bodyFatPct);
+  const center = band.targetCenterBf;
+  const floor = band.essentialFloorBf;
+  if (bf >= center) return bf;
+  if (bf >= floor) return center;
+  return center + (floor - bf);
 }
 
 // ── Derived ideal weight (§3.4) ─────────────────────────────────────────────
@@ -194,10 +217,14 @@ export function compositionSnapshotFrom(
   const ffmiPercentile = ffmiDist ? percentileInGaussian(ffmi, ffmiDist) : null;
 
   // BF band percentile: scored against a target band with a healthy floor (§3.6).
-  // The data layer's bf_band distribution encodes the target (lowerIsBetter style
-  // toward the band center); we feed the BF% as the raw and let it place us.
+  // effectiveBfForScoring plateaus the reward at the target center and reflects
+  // sub-essential leanness back down, so being leaner-than-ideal never out-scores the
+  // healthy target — fixing the old monotone "leaner = higher percentile" that read a
+  // dangerous 4% body-fat at ~99.8th.
   const bfDist = lookupCohortDist("body_composition.bf_band", cohort);
-  const bfPercentile = bfDist ? percentileInGaussian(bf, bfDist) : null;
+  const bfPercentile = bfDist
+    ? percentileInGaussian(effectiveBfForScoring(bodyFatPct, band), bfDist)
+    : null;
 
   const idealWeight = idealWeightRange(lean, band);
   const ladder: CompMethod = opts.method ?? "inferred_from_strength";
@@ -301,10 +328,6 @@ function clampFrac(v: number): number {
 function toBfFraction(v: number): number {
   const f = v > 1 ? v / 100 : v;
   return clampFrac(f);
-}
-
-function round1(v: number): number {
-  return Math.round(v * 10) / 10;
 }
 
 function maxVal(rec: Partial<Record<MuscleGroup, number>>): number | null {

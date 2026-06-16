@@ -9,8 +9,11 @@ import { Improve } from "./screens/Improve";
 import { LogSheet, BenchmarkSheet, GoalSheet } from "./components/Sheets";
 import { StartSheet } from "./components/SessionStart";
 import { RoutineBuilder } from "./components/RoutineBuilder";
+import { WeeklyPlanEditor } from "./components/WeeklyPlanEditor";
 import { ActiveSession, MiniSessionBar } from "./components/ActiveSession";
 import { ExerciseDetail } from "./components/ExerciseDetail";
+import { SessionDetail } from "./components/SessionDetail";
+import { SessionEditor } from "./components/SessionEditor";
 
 function Screens() {
   const { tab, data } = usePeak();
@@ -39,10 +42,13 @@ function Shell() {
           <GoalSheet />
           <StartSheet />
           <RoutineBuilder />
+          <WeeklyPlanEditor />
           <MiniSessionBar />
           <BottomNav />
           <ActiveSession />
+          <SessionDetail />
           <ExerciseDetail />
+          <SessionEditor />
         </div>
       </div>
     </div>

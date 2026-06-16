@@ -78,10 +78,17 @@ export function cappedOf(p: number | null): number | null {
  */
 export function percentileInGaussian(raw: number, dist: CohortDist): number {
   const sd = dist.sd > 0 ? dist.sd : 1e-9;
-  const z = (raw - dist.mean) / sd;
+  const z = (distSpace(raw, dist) - dist.mean) / sd;
   let p = normalCdf(z);
   if (dist.lowerIsBetter) p = 1 - p;
   return clamp(p, 0.001, 0.999);
+}
+
+/** Map a raw value into the distribution's measurement space (identity unless a
+ *  `transform` is set; `log1p` for right-skewed, zero-floored metrics). */
+export function distSpace(raw: number, dist: CohortDist): number {
+  if (dist.transform === "log1p") return Math.log1p(Math.max(0, raw));
+  return raw;
 }
 
 /**
@@ -95,7 +102,7 @@ export function percentileInGaussian(raw: number, dist: CohortDist): number {
 function normalizedOf(raw: number, dist: CohortDist): number {
   // Same transform as percentile but without tail clamping — a pure [0,1] map.
   const sd = dist.sd > 0 ? dist.sd : 1e-9;
-  const z = (raw - dist.mean) / sd;
+  const z = (distSpace(raw, dist) - dist.mean) / sd;
   let n = normalCdf(z);
   if (dist.lowerIsBetter) n = 1 - n;
   return clamp(n, 0, 1);

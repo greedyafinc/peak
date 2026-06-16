@@ -30,6 +30,7 @@ import { LEAF_BY_ID } from "../data/capabilityTree";
 import { standardEquivFactor, variantConfidenceFactor } from "../data/benchmarkVariants";
 import { lookupCohortDist, methodologyNoteFor } from "../data/distributions";
 import { buildCohort } from "./cohort";
+import { est1RM } from "./math";
 import {
   scoreLeafRaw,
   tierForPercentile,
@@ -56,7 +57,11 @@ export {
 export { computeHeadline, rollupDimension } from "./rollup";
 export type { DimensionRollup, SubcategoryRollup, Eligibility } from "./rollup";
 export { inferMuscleStrength } from "./infer";
+export { regionTrainingForGroup } from "./regions";
+export type { RegionTraining, RegionTrainingResult } from "./regions";
 export { computeConsistency } from "./consistency";
+export { computeWeekStatus, mondayIndex, planIsEmpty, EMPTY_WEEK_DAYS } from "./weeklyPlan";
+export type { WeekStatus, WeekDayStatus, DayKind } from "./weeklyPlan";
 export { project, projectToTarget } from "./projection";
 export {
   compositionSnapshotFrom,
@@ -65,6 +70,7 @@ export {
   leanMassKg,
   bfBandOf,
   belowEssentialFloor,
+  effectiveBfForScoring,
   applyFloorGuard,
   muscularityPrior,
 } from "./composition";
@@ -92,7 +98,7 @@ export function rawScalarFor(leafId: LeafId, raw: RawMeasurement): number | null
       // For a 1RM leaf, a multi-rep max_load is converted to est-1RM (Epley), then
       // re-expressed onto the STANDARD movement's curve via the variant factor
       // (1.0 for the standard / barbell). §4.2 flexible benchmarking.
-      const est1rm = raw.reps > 1 ? raw.load.value * (1 + raw.reps / 30) : raw.load.value;
+      const est1rm = raw.reps > 1 ? est1RM(raw.load.value, raw.reps) : raw.load.value;
       return est1rm * standardEquivFactor(raw.variantId);
     }
     case "rep_max":

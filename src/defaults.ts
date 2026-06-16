@@ -35,6 +35,7 @@ export function emptyPeakData(): PeakData {
     biometric: null,
     sessions: [],
     routines: [],
+    weeklyPlan: null,
     leafScores: {},
     muscleEstimates: {},
     benchmarkResults: [],

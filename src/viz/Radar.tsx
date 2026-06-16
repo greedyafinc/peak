@@ -1,4 +1,4 @@
-import { mono } from "../theme";
+import { C, mono, hexA } from "../theme";
 
 // One axis of the capability radar: a short label + a 0–100 value.
 export type RadarAxis = { abbr: string; val: number };
@@ -24,21 +24,21 @@ export function Radar({ metrics }: { metrics: RadarAxis[] }) {
       ))}
       {vals.map((_, i) => {
         const p = pt(i, rad);
-        return <line key={"ax" + i} x1={cx} y1={cy} x2={p[0]} y2={p[1]} stroke="rgba(255,255,255,0.07)" strokeWidth={1} />;
+        return <line key={"ax" + i} x1={cx} y1={cy} x2={p[0]} y2={p[1]} stroke={C.line} strokeWidth={1} />;
       })}
-      <polygon points={dataPts} fill="rgba(198,255,61,0.16)" stroke="#c6ff3d" strokeWidth={2} strokeLinejoin="round" />
+      <polygon points={dataPts} fill={hexA(C.accent, 0.16)} stroke={C.accent} strokeWidth={2} strokeLinejoin="round" />
       {vals.map((v, i) => {
         const p = pt(i, (rad * v) / 100);
-        return <circle key={"dot" + i} cx={p[0]} cy={p[1]} r={3.5} fill="#c6ff3d" />;
+        return <circle key={"dot" + i} cx={p[0]} cy={p[1]} r={3.5} fill={C.accent} />;
       })}
       {labels.map((l, i) => {
         const p = pt(i, rad + 18);
         return (
           <g key={"l" + i}>
-            <text x={p[0]} y={p[1] - 2} fill="#6b7178" fontSize={10} fontFamily={mono} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+            <text x={p[0]} y={p[1] - 2} fill={C.muted} fontSize={10} fontFamily={mono} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
               {l}
             </text>
-            <text x={p[0]} y={p[1] + 11} fill="#f4f5f3" fontSize={11} fontFamily={mono} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
+            <text x={p[0]} y={p[1] + 11} fill={C.ink} fontSize={11} fontFamily={mono} fontWeight={700} textAnchor="middle" dominantBaseline="middle">
               {vals[i]}
             </text>
           </g>

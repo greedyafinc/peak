@@ -4,6 +4,8 @@
 // a tiny trend sparkline. All pure presentational SVG; width-responsive via viewBox.
 
 import { C, mono } from "../theme";
+import { invNormCdf } from "../data/distributions/_shared";
+import { normalizeRange, makeScaler } from "./chartHelpers";
 import type { ProjPoint } from "../engine/exerciseDetail";
 
 // ── Projection chart ─────────────────────────────────────────────────────────
@@ -37,14 +39,13 @@ export function ProjectionChart({
   if (n === 0) return null;
 
   const mt = (v: number): number => (lowerBetter ? -v : v);
-  const ms = points.map((p) => mt(p.value));
-  const mn = Math.min(...ms);
-  const mx = Math.max(...ms);
+  const { min: mn, max: mx } = normalizeRange(points.map((p) => mt(p.value)));
   const sp = mx - mn || 1;
   const lo = mn - sp * 0.34;
   const hi = mx + sp * 0.3;
   const X = (i: number): number => padL + (n > 1 ? (pw * i) / (n - 1) : pw / 2);
-  const Y = (v: number): number => padT + ph - (ph * (mt(v) - lo)) / (hi - lo);
+  const yScale = makeScaler(lo, hi, padT + ph, padT);
+  const Y = (v: number): number => yScale(mt(v));
 
   const nowI = Math.min(Math.max(0, nowIndex), n - 1);
   const hasProj = n - 1 > nowI;
@@ -73,7 +74,7 @@ export function ProjectionChart({
         </linearGradient>
       </defs>
       {[0, 0.5, 1].map((f, i) => (
-        <line key={`g${i}`} x1={padL} y1={padT + ph * f} x2={W - padR} y2={padT + ph * f} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+        <line key={`g${i}`} x1={padL} y1={padT + ph * f} x2={W - padR} y2={padT + ph * f} stroke={C.line3} strokeWidth={1} />
       ))}
       {/* "now" divider */}
       <line x1={X(nowI)} y1={padT - 4} x2={X(nowI)} y2={padT + ph} stroke="rgba(255,255,255,0.18)" strokeWidth={1} strokeDasharray="2 3" />
@@ -128,7 +129,7 @@ export function BellCurve({ pct, color }: { pct: number; color: string }) {
   const padX = 6;
   const padT = 8;
   const padB = 8;
-  const z = invNorm(Math.max(0.01, Math.min(0.99, pct)));
+  const z = invNormCdf(Math.max(0.01, Math.min(0.99, pct)));
   const zmin = -3.1;
   const zmax = 3.1;
   const span = zmax - zmin;
@@ -180,11 +181,10 @@ export function Sparkline({ values, lowerBetter, color = C.accent }: { values: n
   if (values.length < 2) return null;
   const mt = (v: number): number => (lowerBetter ? -v : v);
   const arr = values.map(mt);
-  const mn = Math.min(...arr);
-  const mx = Math.max(...arr);
-  const sp = mx - mn || 1;
+  const { min: mn, max: mx } = normalizeRange(arr);
   const X = (i: number): number => 3 + ((w - 6) * i) / (values.length - 1);
-  const Y = (i: number): number => 3 + (h - 6) * (1 - (arr[i] - mn) / sp);
+  const yScale = makeScaler(mn, mx, 3, 3 + (h - 6), true);
+  const Y = (i: number): number => yScale(arr[i]);
   let p = `M ${X(0)} ${Y(0)}`;
   for (let i = 1; i < values.length; i++) p += ` L ${X(i)} ${Y(i)}`;
   const li = values.length - 1;
@@ -196,26 +196,3 @@ export function Sparkline({ values, lowerBetter, color = C.accent }: { values: n
   );
 }
 
-// Inverse standard-normal CDF (Acklam's rational approximation) — places the bell
-// marker at the z-score for a given percentile.
-function invNorm(p: number): number {
-  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.38357751867269e2, -3.066479806614716e1, 2.506628277459239];
-  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
-  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
-  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
-  const pl = 0.02425;
-  const ph = 1 - pl;
-  let q: number;
-  let r: number;
-  if (p < pl) {
-    q = Math.sqrt(-2 * Math.log(p));
-    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
-  }
-  if (p <= ph) {
-    q = p - 0.5;
-    r = q * q;
-    return ((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q) / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
-  }
-  q = Math.sqrt(-2 * Math.log(1 - p));
-  return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
-}

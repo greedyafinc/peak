@@ -8,14 +8,15 @@
 // category quick-filters — the "sort by categories alphabetical + search" ask.
 
 import { useEffect, useMemo, useState } from "react";
-import { C, mono } from "../theme";
+import { C, mono, radius } from "../theme";
 import { inputStyle } from "./ui";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import {
-  GYM_EXERCISES, GYM_CATEGORIES, categoryOf, matchesQuery, alternativesFor,
+  GYM_EXERCISES, GYM_CATEGORIES, muscleSections, matchesQuery, alternativesFor,
   exerciseSubtitle, type ExerciseCategory,
 } from "../data/exerciseCatalog";
 import type { ExerciseDef } from "../types";
+import { Z_INDEX } from "../constants/ui";
 
 type Filter = "Best" | "All" | ExerciseCategory;
 
@@ -59,18 +60,20 @@ export function ExercisePickerModal({
     const hide = (list: ExerciseDef[]) =>
       mode === "swap" ? list.filter((e) => e.id !== swapForExerciseId && !existing.has(e.id)) : list;
 
+    // Search → flat hits, still grouped under their "Category · Muscle" sub-headers.
     if (searching) {
-      return [{ title: null, items: hide(GYM_EXERCISES.filter((e) => matchesQuery(e, q))) }];
+      const pool = hide(GYM_EXERCISES.filter((e) => matchesQuery(e, q)));
+      return muscleSections(GYM_CATEGORIES, pool).map((s) => ({ title: s.label, items: s.items }));
     }
+    // Swap → data-ranked alternatives as one flat list (no muscle split).
     if (mode === "swap" && filter === "Best" && swapForExerciseId) {
       return [{ title: "Best alternatives", items: hide(alternativesFor(swapForExerciseId)) }];
     }
-    if (filter === "All" || filter === "Best") {
-      return GYM_CATEGORIES
-        .map((cat) => ({ title: cat as string, items: hide(GYM_EXERCISES.filter((e) => categoryOf(e) === cat)) }))
-        .filter((s) => s.items.length > 0);
-    }
-    return [{ title: filter, items: hide(GYM_EXERCISES.filter((e) => categoryOf(e) === filter)) }];
+    // Browse → region chip selects which categories show; each splits into muscle sub-headers.
+    const cats: ExerciseCategory[] = filter === "All" || filter === "Best" ? GYM_CATEGORIES : [filter];
+    return muscleSections(cats, GYM_EXERCISES)
+      .map((s) => ({ title: s.label, items: hide(s.items) }))
+      .filter((s) => s.items.length > 0);
   }, [q, filter, mode, swapForExerciseId, existing]);
 
   if (!open) return null;
@@ -98,7 +101,7 @@ export function ExercisePickerModal({
   return (
     <div
       onClick={onClose}
-      style={{ position: "absolute", inset: 0, zIndex: 90, background: "rgba(0,0,0,0.62)", animation: "fadeIn .2s ease", display: "flex", alignItems: "flex-end" }}
+      style={{ position: "absolute", inset: 0, zIndex: Z_INDEX.picker, background: "rgba(0,0,0,0.62)", animation: "fadeIn .2s ease", display: "flex", alignItems: "flex-end" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -135,7 +138,7 @@ export function ExercisePickerModal({
                   key={c}
                   onClick={() => { setFilter(c); setQ(""); }}
                   style={{
-                    flexShrink: 0, fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 30, cursor: "pointer",
+                    flexShrink: 0, fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: radius.pill, cursor: "pointer",
                     border: `1px solid ${on ? C.accent : C.line2}`,
                     background: on ? C.accent : C.inner,
                     color: on ? "#0a0b0d" : C.sub,

@@ -1,7 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { load, loadSync, save, loadSyncAt, loadAt, saveAt, removeAt, ACTIVE_SESSION_KEY } from "./storage";
-import { emptyPeakData, DATA_VERSION } from "./defaults";
+import { emptyPeakData } from "./defaults";
 import { ROUTINE_BY_ID } from "./data/routines";
+import { uid } from "./utils/id";
+import { nowISO, localDayKey } from "./utils/date";
+import { reconcile, snapshotBuild } from "./data/migration";
 import { weightToKg, kgToDisplay } from "./units";
 import {
   recomputeAll,
@@ -13,6 +16,7 @@ import {
   compositionSnapshotFrom,
   ageYearsFrom,
   project,
+  mondayIndex,
   type DimensionRollup,
 } from "./engine";
 import type {
@@ -37,6 +41,8 @@ import type {
   MethodologyNote,
   RoutineDef,
   RoutineExercise,
+  WeeklyPlan,
+  WeeklyPlanItem,
 } from "./types";
 import type { ExerciseDetailSpec } from "./engine/exerciseDetail";
 
@@ -58,7 +64,10 @@ export type UIState = {
   activeOpen: boolean;               // the full-screen live Gym session
   routineEditorOpen: boolean;        // the routine builder
   routineEditId: string | null;      // null = building a new routine
+  planEditorOpen: boolean;           // the weekly-routine plan editor
   exDetail: ExerciseDetailSpec | null;  // the full-screen exercise/effort detail (null = closed)
+  sessionDetailId: string | null;    // the full-page logged-session detail (null = closed)
+  sessionEditId: string | null;      // the full-page logged-session editor (null = closed)
 };
 
 const INITIAL_UI: UIState = {
@@ -75,7 +84,10 @@ const INITIAL_UI: UIState = {
   activeOpen: false,
   routineEditorOpen: false,
   routineEditId: null,
+  planEditorOpen: false,
   exDetail: null,
+  sessionDetailId: null,
+  sessionEditId: null,
 };
 
 // ── Live Gym session (in-progress; draft strings in the active display unit) ──
@@ -129,6 +141,16 @@ export type LogSessionInput = {
   notes?: string;
   programId?: string;          // FK → RoutineDef.id when committed from a routine
 };
+// Editing a committed Session — the editable surface (its identity, build snapshot
+// and timestamps are preserved; only the logged content + labels are rewritten).
+export type EditSessionInput = {
+  type: WorkoutType;
+  title: string;
+  notes?: string;
+  durationMin?: number | null;
+  entries: LogEntryInput[];
+  cardio?: LogCardioInput[];
+};
 export type GoalInput = { name: string; dimension: DimensionId; targetLeafId?: LeafId; targetPercentileRaw?: number };
 export type RoutineDraft = { id?: string; name: string; focus?: string; exercises: RoutineExercise[] };
 
@@ -151,6 +173,8 @@ export type PeakStore = UIState & {
   completeOnboarding: (input: OnboardInput) => void;
   addBenchmark: (leafId: LeafId, raw: RawMeasurement) => void;
   logSession: (input: LogSessionInput) => void;
+  updateSession: (id: string, input: EditSessionInput) => void;
+  removeSession: (id: string) => void;
   addGoal: (g: GoalInput) => void;
   removeGoal: (id: string) => void;
   setEligibility: (leafId: LeafId, eligible: boolean) => void;
@@ -176,40 +200,14 @@ export type PeakStore = UIState & {
   duplicateRoutine: (source: RoutineDef) => void;
   openRoutineEditor: (id: string | null) => void;
   closeRoutineEditor: () => void;
+  // ── Weekly routine plan ──
+  openPlanEditor: () => void;
+  closePlanEditor: () => void;
+  saveWeeklyPlan: (days: WeeklyPlanItem[][]) => void;
+  clearWeeklyPlan: () => void;
+  toggleDayDone: (dateKey: string) => void;
+  startTodayPlan: () => void;
 };
-
-const nowISO = () => new Date().toISOString();
-function localDayKey(d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-let _seq = 0;
-function uid(prefix: string): string {
-  _seq += 1;
-  return `${prefix}_${Date.now().toString(36)}_${_seq.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-}
-
-// Migrate / reconcile: this is a fresh v3 model, so any older/missing doc resets
-// to an empty v3 document (the old v1 prototype lived under a different storage
-// key, so no real user data is destroyed).
-function reconcile(loaded: Partial<PeakData> | null): PeakData {
-  const base = emptyPeakData();
-  if (!loaded || (loaded.version ?? 0) < DATA_VERSION || !loaded.schema) return base;
-  return { ...base, ...loaded } as PeakData;
-}
-
-// Build the immutable BuildSnapshot from stored covariates, refreshing the derived
-// ageYears + capturedAt at the moment of capture (birthDate is the source of truth).
-function snapshotBuild(build: BuildSnapshot, comp: CompositionSnapshot | null, at: string): BuildSnapshot {
-  return {
-    ...build,
-    ageYears: ageYearsFrom(build.birthDate, at),
-    bodyweightKg: comp?.bodyweight?.value ?? build.bodyweightKg,
-    bodyFatPct: comp?.bodyFatPct?.value ?? build.bodyFatPct,
-    ffmi: comp?.ffmi?.value ?? build.ffmi,
-    capturedAt: at,
-  };
-}
 
 const Ctx = createContext<PeakStore | null>(null);
 
@@ -345,6 +343,44 @@ export function PeakProvider({ children }: { children: ReactNode }) {
       set({ logOpen: false, tab: "log" });
     };
 
+    // Start a live Gym session — empty, or seeded from a routine (built-in or saved).
+    const startSession = (opts?: { routineId?: string; title?: string }) => {
+      const at = nowISO();
+      const routineId = opts?.routineId;
+      let title = opts?.title?.trim() ?? "";
+      let exercises: LiveExercise[] = [];
+      if (routineId) {
+        const r = ROUTINE_BY_ID[routineId] ?? dataRef.current.routines.find((x) => x.id === routineId);
+        if (r) {
+          title = title || r.name;
+          exercises = r.exercises.map((re) => ({
+            id: uid("lex"),
+            exerciseId: re.exerciseId,
+            sets: Array.from({ length: Math.max(1, re.sets) }, () => newLiveSet(re.repLow, re.repHigh)),
+          }));
+        }
+      }
+      setActiveSession({ startedAt: at, title, routineId, exercises, restEndsAt: null });
+      set({ startOpen: false, activeOpen: true });
+    };
+
+    // Start today's planned workout. With exactly one linked routine and nothing
+    // else on the agenda, jump straight in; otherwise surface today's plan in the
+    // start chooser so the user picks (the "starting shows today's workouts" ask).
+    // A live session is never silently overwritten — route to the chooser (which
+    // shows the Resume banner) so unsaved sets/reps/timer aren't lost.
+    const startTodayPlan = () => {
+      if (activeRef.current) { set({ startOpen: true }); return; }
+      const plan = dataRef.current.weeklyPlan;
+      const items = plan?.days[mondayIndex(new Date())] ?? [];
+      const routineItems = items.filter((it) => it.type === "Gym" && it.routineId);
+      if (items.length === 1 && routineItems.length === 1) {
+        startSession({ routineId: routineItems[0].routineId });
+      } else {
+        set({ startOpen: true });
+      }
+    };
+
     return {
       ...ui,
       data,
@@ -405,26 +441,65 @@ export function PeakProvider({ children }: { children: ReactNode }) {
 
       logSession,
 
-      // ── Live Gym session ───────────────────────────────────────────────────
-      startSession: (opts) => {
-        const at = nowISO();
-        const routineId = opts?.routineId;
-        let title = opts?.title?.trim() ?? "";
-        let exercises: LiveExercise[] = [];
-        if (routineId) {
-          const r = ROUTINE_BY_ID[routineId] ?? dataRef.current.routines.find((x) => x.id === routineId);
-          if (r) {
-            title = title || r.name;
-            exercises = r.exercises.map((re) => ({
-              id: uid("lex"),
-              exerciseId: re.exerciseId,
-              sets: Array.from({ length: Math.max(1, re.sets) }, () => newLiveSet(re.repLow, re.repHigh)),
-            }));
-          }
-        }
-        setActiveSession({ startedAt: at, title, routineId, exercises, restEndsAt: null });
-        set({ startOpen: false, activeOpen: true });
+      // Rewrite a committed session in place — keep its identity, seq, timestamps
+      // and build/composition snapshot; replace only the logged content + labels.
+      // Sets get fresh ids (scores recompute from scratch, so churn is harmless).
+      updateSession: (id, input) => {
+        update((d) => {
+          const idx = d.sessions.findIndex((x) => x.id === id);
+          if (idx < 0) return d;
+          const prev = d.sessions[idx];
+          const entries: ExerciseEntry[] = input.entries.map((e) => ({
+            id: uid("entry"),
+            exerciseId: e.exerciseId,
+            sets: e.sets.map((st, i): SetRecord => ({
+              id: uid("set"),
+              seq: i,
+              weight: st.weightKg != null ? { value: st.weightKg, unit: "kg" } : null,
+              reps: st.reps,
+              rpe: st.rpe ?? null,
+              restSec: null,
+              targetHit: null,
+            })),
+          }));
+          const cardio: CardioSetRecord[] | undefined =
+            input.cardio && input.cardio.length
+              ? input.cardio.map((c, i) => ({
+                  id: uid("cardio"),
+                  seq: i,
+                  distance: c.distanceKm != null ? { value: c.distanceKm, unit: "km" } : null,
+                  duration: { value: c.durationMin, unit: "min" },
+                  avgHr: c.avgHr != null ? { value: c.avgHr, unit: "bpm" } : null,
+                  targetHit: null,
+                }))
+              : undefined;
+          const updated: Session = {
+            ...prev,
+            type: input.type,
+            // Honor a cleared title with the same default logSession uses, rather
+            // than silently resurrecting the old name (which the empty field hid).
+            title: input.title.trim() || `${input.type} Session`,
+            entries,
+            cardio,
+            durationMin: input.durationMin ?? undefined,
+            notes: input.notes?.trim() || undefined,
+          };
+          const sessions = d.sessions.slice();
+          sessions[idx] = updated;
+          return { ...d, sessions };
+        });
+        set({ sessionEditId: null });
       },
+
+      // Delete a committed session and close any view pointing at it.
+      removeSession: (id) => {
+        update((d) => ({ ...d, sessions: d.sessions.filter((x) => x.id !== id) }));
+        set({ sessionDetailId: null, sessionEditId: null });
+      },
+
+      // ── Live Gym session ───────────────────────────────────────────────────
+      startSession,
+      startTodayPlan,
 
       addLiveExercises: (ids) =>
         mutateActive((a) => ({
@@ -587,6 +662,45 @@ export function PeakProvider({ children }: { children: ReactNode }) {
 
       openRoutineEditor: (id) => set({ startOpen: false, routineEditorOpen: true, routineEditId: id }),
       closeRoutineEditor: () => set({ routineEditorOpen: false, routineEditId: null, startOpen: true }),
+
+      // ── Weekly routine plan ────────────────────────────────────────────────
+      openPlanEditor: () => set({ startOpen: false, planEditorOpen: true }),
+      closePlanEditor: () => set({ planEditorOpen: false }),
+
+      // Replace the whole 7-day plan (the editor saves all days at once). Fresh
+      // ids are minted for any item that lacks one (e.g. from a template).
+      saveWeeklyPlan: (days) => {
+        update((d) => {
+          const at = nowISO();
+          const normDays = days.map((day) => day.map((it) => ({ ...it, id: it.id || uid("pitem") })));
+          const isEmpty = normDays.every((day) => day.length === 0);
+          if (isEmpty) return { ...d, weeklyPlan: null }; // an empty plan = no plan
+          const prev = d.weeklyPlan;
+          const plan: WeeklyPlan = {
+            days: normDays,
+            completions: prev?.completions ?? [],
+            createdAt: prev?.createdAt ?? at,
+            updatedAt: at,
+          };
+          return { ...d, weeklyPlan: plan };
+        });
+        set({ planEditorOpen: false });
+      },
+
+      clearWeeklyPlan: () => update((d) => ({ ...d, weeklyPlan: null })),
+
+      // Toggle a manual completion tick for a calendar day. A day with a real
+      // logged Session always reads done regardless — this only adds/removes the
+      // explicit tick for days the user did without logging here.
+      toggleDayDone: (dateKey) =>
+        update((d) => {
+          if (!d.weeklyPlan) return d;
+          const has = d.weeklyPlan.completions.includes(dateKey);
+          const completions = has
+            ? d.weeklyPlan.completions.filter((k) => k !== dateKey)
+            : [...d.weeklyPlan.completions, dateKey];
+          return { ...d, weeklyPlan: { ...d.weeklyPlan, completions } };
+        }),
 
       addGoal: (g) => {
         update((d) => {
