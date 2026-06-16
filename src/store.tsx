@@ -530,7 +530,10 @@ export function PeakProvider({ children }: { children: ReactNode }) {
           exercises: a.exercises.map((ex) => {
             if (ex.id !== liExId) return ex;
             const last = ex.sets[ex.sets.length - 1];
-            return { ...ex, sets: [...ex.sets, newLiveSet(last?.targetRepLow, last?.targetReps)] };
+            // Pre-fill weight/reps from the previous set so adding sets at the
+            // same load is one tap — the user only edits what changed.
+            const next = newLiveSet(last?.targetRepLow, last?.targetReps);
+            return { ...ex, sets: [...ex.sets, { ...next, weight: last?.weight ?? "", reps: last?.reps ?? "" }] };
           }),
         })),
 
