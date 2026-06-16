@@ -1,13 +1,14 @@
 // Peak — bottom sheets: the real per-set logger (§6.4), the benchmark capture,
 // and the goal builder. Each gated on its store flag, each using the shared Sheet.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePeak, type LogEntryInput, type LogSetInput } from "../store";
 import { C, mono } from "../theme";
 import {
   Sheet, Field, Chip, PrimaryButton, GhostButton, UnitToggle, DurationInput, inputStyle,
 } from "../components/ui";
-import { EXERCISES, EXERCISE_BY_ID } from "../data/exercises";
+import { EXERCISE_BY_ID } from "../data/exercises";
 import { isPerArm } from "../data/exerciseCatalog";
+import { ExercisePickerModal } from "./ExercisePickerModal";
 import { BENCHMARK_BY_LEAF, standardDistanceKm, eventNeedsHours } from "../data/benchmarks";
 import { variantsForLeaf } from "../data/benchmarkVariants";
 import { LEAF_BY_ID, DIMENSIONS } from "../data/capabilityTree";
@@ -56,7 +57,6 @@ export function LogSheet() {
   const [title, setTitle] = useState("");
   const [entries, setEntries] = useState<DraftEntry[]>([]);
   const [picking, setPicking] = useState(false);
-  const [search, setSearch] = useState("");
   const [durationMin, setDurationMin] = useState("");
   const [notes, setNotes] = useState("");
   // cardio
@@ -67,27 +67,14 @@ export function LogSheet() {
   const isCardio = type === "Cardio";
 
   const reset = () => {
-    setType("Gym"); setTitle(""); setEntries([]); setPicking(false); setSearch("");
+    setType("Gym"); setTitle(""); setEntries([]); setPicking(false);
     setDurationMin(""); setNotes(""); setCDist(""); setCDurSec(null); setCHr("");
   };
   const close = () => { reset(); s.set({ logOpen: false }); };
 
-  const grouped = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const list = EXERCISES.filter((e) => e.dimension !== "aerobic" && (!q || e.name.toLowerCase().includes(q)));
-    const map = new Map<string, typeof EXERCISES>();
-    for (const e of list) {
-      const k = e.movementPattern;
-      if (!map.has(k)) map.set(k, []);
-      map.get(k)!.push(e);
-    }
-    return [...map.entries()];
-  }, [search]);
-
-  const addExercise = (id: string) => {
-    setEntries((es) => [...es, { exerciseId: id, sets: [{ weight: "", reps: "", rpe: "" }] }]);
-    setPicking(false); setSearch("");
-  };
+  // Append picks from the shared exercise picker (each starts with one blank set).
+  const addExercises = (ids: string[]) =>
+    setEntries((es) => [...es, ...ids.map((id) => ({ exerciseId: id, sets: [{ weight: "", reps: "", rpe: "" }] }))]);
   const removeEntry = (idx: number) => setEntries((es) => es.filter((_, i) => i !== idx));
   const addSet = (ei: number) =>
     setEntries((es) => es.map((e, i) => i === ei ? { ...e, sets: [...e.sets, { weight: "", reps: "", rpe: "" }] } : e));
@@ -206,31 +193,7 @@ export function LogSheet() {
             })}
           </div>
 
-          {picking ? (
-            <div style={{ background: C.inner, border: `1px solid ${C.line2}`, borderRadius: 14, padding: 12, marginBottom: 14 }}>
-              <input autoFocus value={search} placeholder="Search exercises…" onChange={(e) => setSearch(e.target.value)} style={{ ...inputStyle, marginBottom: 10 }} />
-              <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
-                {grouped.map(([pattern, list]) => (
-                  <div key={pattern}>
-                    <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 6 }}>
-                      {pattern.replace(/_/g, " ")}
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-                      {list.map((ex) => (
-                        <button key={ex.id} onClick={() => addExercise(ex.id)}
-                          style={{ fontSize: 12.5, fontWeight: 600, padding: "7px 11px", borderRadius: 10, cursor: "pointer", border: `1px solid ${C.line2}`, background: C.card, color: C.ink2 }}>
-                          {ex.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <GhostButton color={C.muted} onClick={() => { setPicking(false); setSearch(""); }} style={{ marginTop: 10 }}>Cancel</GhostButton>
-            </div>
-          ) : (
-            <GhostButton onClick={() => setPicking(true)} style={{ marginBottom: 14 }}>＋ Add exercise</GhostButton>
-          )}
+          <GhostButton onClick={() => setPicking(true)} style={{ marginBottom: 14 }}>＋ Add exercise</GhostButton>
         </>
       )}
 
@@ -242,6 +205,14 @@ export function LogSheet() {
       </Field>
 
       <PrimaryButton onClick={save} disabled={!canSave}>Save session</PrimaryButton>
+
+      <ExercisePickerModal
+        open={picking}
+        mode="add"
+        existingExerciseIds={entries.map((e) => e.exerciseId)}
+        onClose={() => setPicking(false)}
+        onAdd={addExercises}
+      />
     </Sheet>
   );
 }

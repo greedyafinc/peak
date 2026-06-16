@@ -58,6 +58,56 @@ export const equipmentLabel = (e: string): string => EQUIP_LABEL[e] ?? e;
 /** Human label for a muscle group, reusing the body-map vocabulary. */
 export const muscleLabel = (m: MuscleGroup): string => MUSCLE_TO_SVG[m]?.label ?? m;
 
+// ── Muscle sub-grouping (the picker's "Category · Muscle" sub-headers) ─────────
+// Within a body-part category the picker splits exercises by the SPECIFIC muscle
+// they primarily train, in a fixed anatomical order. The category is the broad chip
+// (Arms, Back…); the muscle is the finer header inside it (Arms · Biceps, Arms ·
+// Triceps). Because categoryOf() is derived from the first primary mover, every
+// exercise's muscle always lives inside its own category — this is a pure refinement.
+const CATEGORY_MUSCLE_ORDER: Record<ExerciseCategory, MuscleGroup[]> = {
+  Chest: ["chest"],
+  Back: ["lat", "trap", "lower_back"],
+  Shoulders: ["front_delt", "side_delt", "rear_delt"],
+  Arms: ["biceps", "triceps", "forearms"],
+  Legs: ["quads", "hamstrings", "glutes", "calves", "tibialis"],
+  Core: ["abs", "obliques"],
+  Cardio: [],
+};
+
+/** The muscle sub-group an exercise files under within its category (first primary mover). */
+export function muscleOf(ex: ExerciseDef): MuscleGroup | null {
+  return ex.primaryMuscles[0] ?? null;
+}
+
+export type PickerSection = { category: ExerciseCategory; muscle: MuscleGroup | null; label: string; items: ExerciseDef[] };
+
+/**
+ * Two-tier sections for the picker: each category split into its ordered muscle
+ * sub-sections, labelled "Category · Muscle" (or just "Category" when the category has
+ * a single muscle, e.g. Chest). `pool` is pre-filtered (search hits, or all GYM_EXERCISES);
+ * items keep `pool`'s order (GYM_EXERCISES is alphabetical by name). Empty sections drop out.
+ */
+export function muscleSections(categories: ExerciseCategory[], pool: ExerciseDef[] = GYM_EXERCISES): PickerSection[] {
+  const out: PickerSection[] = [];
+  for (const cat of categories) {
+    const order = CATEGORY_MUSCLE_ORDER[cat] ?? [];
+    const inCat = pool.filter((e) => categoryOf(e) === cat);
+    if (inCat.length === 0) continue;
+    const single = order.length <= 1;
+    const placed = new Set<MuscleGroup>();
+    for (const m of order) {
+      const items = inCat.filter((e) => muscleOf(e) === m);
+      if (items.length === 0) continue;
+      placed.add(m);
+      out.push({ category: cat, muscle: m, label: single ? cat : `${cat} · ${muscleLabel(m)}`, items });
+    }
+    // Safety net: any exercise whose primary mover isn't in the category order still shows.
+    const rest = inCat.filter((e) => { const m = muscleOf(e); return !m || !placed.has(m); });
+    if (rest.length) out.push({ category: cat, muscle: null, label: cat, items: rest });
+  }
+  return out;
+}
+
 // ── Per-arm loading ───────────────────────────────────────────────────────────
 // Dumbbell / kettlebell movements are loaded PER HAND (one implement per arm, or
 // trained one side at a time), so the weight entered — and the volume figure — is
@@ -118,12 +168,13 @@ export function exerciseSubtitle(ex: ExerciseDef): string {
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
-/** Case-insensitive match across name, equipment, and primary muscle labels. */
+/** Case-insensitive match across name, gym-nickname aliases, equipment, and muscle labels. */
 export function matchesQuery(ex: ExerciseDef, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
   const hay = [
     ex.name,
+    ...(ex.aliases ?? []),
     equipmentLabel(ex.equipment),
     ...ex.primaryMuscles.map(muscleLabel),
   ].join(" ").toLowerCase();

@@ -234,6 +234,7 @@ export type DimensionMeta = {
 export type ExerciseDef = {
   id: string;                  // stable, e.g. "barbell-bench-press"
   name: string;
+  aliases?: string[];          // alternate names / gym nicknames for search (e.g. "skull crusher", "rdl")
   movementPattern: MovementPattern;
   equipment: Equipment;
   primaryMuscles: MuscleGroup[];

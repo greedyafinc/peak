@@ -1956,6 +1956,31 @@ export const REGION_EMPHASIS: Record<string, Partial<Record<MuscleGroup, Partial
       calves_soleus: 0.3
     }
   },
+
+  // ── Catalog-expansion region emphasis (see exercises.ts; authored + verified) ──
+  "ez-bar-skullcrusher": { triceps: { triceps_long: 0.4, triceps_lateral: 0.3, triceps_medial: 0.3 } },
+  "dumbbell-skullcrusher": { triceps: { triceps_long: 0.42, triceps_lateral: 0.31, triceps_medial: 0.27 } },
+  "floor-press": { triceps: { triceps_long: 0.3, triceps_lateral: 0.4, triceps_medial: 0.3 } },
+  "smith-bench-press": { chest: { chest_upper: 0.25, chest_mid: 0.45, chest_lower: 0.3 } },
+  "close-grip-pushup": { triceps: { triceps_long: 0.3, triceps_lateral: 0.4, triceps_medial: 0.3 }, chest: { chest_upper: 0.25, chest_mid: 0.45, chest_lower: 0.3 } },
+  "machine-row": { lat: { lat_upper: 0.5, lat_lower: 0.5 }, trap: { trap_upper: 0.2, trap_mid: 0.55, trap_lower: 0.25 }, biceps: { biceps_long_head: 0.42, biceps_short_head: 0.42, biceps_brachialis: 0.16 } },
+  "wide-grip-pulldown": { lat: { lat_upper: 0.65, lat_lower: 0.35 }, biceps: { biceps_long_head: 0.42, biceps_short_head: 0.42, biceps_brachialis: 0.16 } },
+  "kroc-row": { lat: { lat_upper: 0.4, lat_lower: 0.6 }, trap: { trap_upper: 0.35, trap_mid: 0.45, trap_lower: 0.2 }, biceps: { biceps_long_head: 0.42, biceps_short_head: 0.42, biceps_brachialis: 0.16 }, forearms: { forearms_flexors: 0.6, forearms_extensors: 0.15, forearms_brachioradialis: 0.25 } },
+  "renegade-row": { lat: { lat_upper: 0.4, lat_lower: 0.6 }, trap: { trap_upper: 0.2, trap_mid: 0.55, trap_lower: 0.25 }, abs: { abs_upper: 0.25, abs_lower: 0.3, abs_deep: 0.45 }, obliques: { obliques_external: 0.65, obliques_internal: 0.35 }, biceps: { biceps_long_head: 0.42, biceps_short_head: 0.42, biceps_brachialis: 0.16 } },
+  "leaning-cable-lateral-raise": { trap: { trap_upper: 0.55, trap_mid: 0.2, trap_lower: 0.25 } },
+  "z-press": { trap: { trap_upper: 0.6, trap_mid: 0.25, trap_lower: 0.15 } },
+  "machine-preacher-curl": { biceps: { biceps_short_head: 0.51, biceps_long_head: 0.35, biceps_brachialis: 0.14 }, forearms: { forearms_brachioradialis: 0.6, forearms_flexors: 0.25, forearms_extensors: 0.15 } },
+  "bayesian-cable-curl": { biceps: { biceps_long_head: 0.54, biceps_short_head: 0.32, biceps_brachialis: 0.14 }, forearms: { forearms_brachioradialis: 0.6, forearms_flexors: 0.25, forearms_extensors: 0.15 } },
+  "cross-body-hammer-curl": { biceps: { biceps_brachialis: 0.46, biceps_long_head: 0.34, biceps_short_head: 0.2 }, forearms: { forearms_brachioradialis: 0.72, forearms_extensors: 0.18, forearms_flexors: 0.1 } },
+  "dead-hang": { forearms: { forearms_flexors: 0.78, forearms_brachioradialis: 0.13, forearms_extensors: 0.09 } },
+  "single-leg-hip-thrust": { glutes: { glutes_max_lower: 0.45, glutes_max_upper: 0.3, glutes_med_min: 0.25 } },
+  "standing-leg-curl": { hamstrings: { hamstrings_lateral: 0.55, hamstrings_medial: 0.45 } },
+  "zercher-squat": { quads: { quads_rectus_femoris: 0.26, quads_vastus_lateralis: 0.38, quads_vastus_medialis: 0.36 }, trap: { trap_upper: 0.4, trap_mid: 0.4, trap_lower: 0.2 } },
+  "hanging-knee-raise": { abs: { abs_upper: 0.2, abs_lower: 0.62, abs_deep: 0.18 }, obliques: { obliques_external: 0.5, obliques_internal: 0.5 }, forearms: { forearms_flexors: 0.7, forearms_extensors: 0.2, forearms_brachioradialis: 0.1 } },
+  "mountain-climber": { abs: { abs_upper: 0.25, abs_lower: 0.55, abs_deep: 0.2 }, obliques: { obliques_external: 0.6, obliques_internal: 0.4 } },
+  "l-sit": { abs: { abs_upper: 0.2, abs_lower: 0.55, abs_deep: 0.25 }, quads: { quads_rectus_femoris: 0.6, quads_vastus_lateralis: 0.2, quads_vastus_medialis: 0.2 }, triceps: { triceps_long: 0.45, triceps_lateral: 0.3, triceps_medial: 0.25 }, lat: { lat_lower: 0.6, lat_upper: 0.4 } },
+  "captains-chair-knee-raise": { abs: { abs_upper: 0.23, abs_lower: 0.6, abs_deep: 0.17 }, obliques: { obliques_external: 0.5, obliques_internal: 0.5 } },
+  "flutter-kicks": { abs: { abs_upper: 0.23, abs_lower: 0.6, abs_deep: 0.17 }, quads: { quads_rectus_femoris: 0.8, quads_vastus_lateralis: 0.1, quads_vastus_medialis: 0.1 }, obliques: { obliques_external: 0.5, obliques_internal: 0.5 } },
 };
 
 /**

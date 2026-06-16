@@ -25,6 +25,7 @@ export const EXERCISES: ExerciseDef[] = [
   {
     id: "barbell-bench-press",
     name: "Barbell Bench Press",
+    aliases: ["bench", "bench press", "flat bench"],
     movementPattern: "horizontal_push",
     equipment: "barbell",
     primaryMuscles: ["chest"],
@@ -99,6 +100,7 @@ export const EXERCISES: ExerciseDef[] = [
   {
     id: "barbell-overhead-press",
     name: "Barbell Overhead Press",
+    aliases: ["ohp", "overhead press", "military press", "strict press", "shoulder press"],
     movementPattern: "vertical_push",
     equipment: "barbell",
     primaryMuscles: ["front_delt"],
@@ -195,6 +197,7 @@ export const EXERCISES: ExerciseDef[] = [
   {
     id: "lat-pulldown",
     name: "Lat Pulldown",
+    aliases: ["pulldown", "lat pull down", "lat pull-down"],
     movementPattern: "vertical_pull",
     equipment: "cable",
     primaryMuscles: ["lat"],
@@ -207,6 +210,7 @@ export const EXERCISES: ExerciseDef[] = [
   {
     id: "barbell-back-squat",
     name: "Barbell Back Squat",
+    aliases: ["squat", "back squat"],
     movementPattern: "squat",
     equipment: "barbell",
     primaryMuscles: ["quads", "glutes"],
@@ -259,6 +263,7 @@ export const EXERCISES: ExerciseDef[] = [
   {
     id: "barbell-deadlift",
     name: "Barbell Deadlift",
+    aliases: ["deadlift", "conventional deadlift"],
     movementPattern: "hinge",
     equipment: "barbell",
     primaryMuscles: ["glutes", "hamstrings", "lower_back"],
@@ -269,6 +274,7 @@ export const EXERCISES: ExerciseDef[] = [
   {
     id: "romanian-deadlift",
     name: "Romanian Deadlift",
+    aliases: ["rdl", "romanian dl", "stiff leg deadlift"],
     movementPattern: "hinge",
     equipment: "barbell",
     primaryMuscles: ["hamstrings", "glutes"],
@@ -322,6 +328,7 @@ export const EXERCISES: ExerciseDef[] = [
   {
     id: "bulgarian-split-squat",
     name: "Bulgarian Split Squat",
+    aliases: ["bss", "split squat", "rear foot elevated split squat"],
     movementPattern: "lunge",
     equipment: "dumbbell",
     primaryMuscles: ["quads", "glutes"],
@@ -373,7 +380,8 @@ export const EXERCISES: ExerciseDef[] = [
   },
   {
     id: "skullcrusher",
-    name: "Lying Triceps Extension",
+    name: "Skull Crusher",
+    aliases: ["lying triceps extension", "lying tricep extension", "french press", "nose breaker", "skullcrusher"],
     movementPattern: "isolation",
     equipment: "barbell",
     primaryMuscles: ["triceps"],
@@ -497,7 +505,7 @@ export const EXERCISES: ExerciseDef[] = [
   { id: "incline-dumbbell-curl", name: "Incline Dumbbell Curl", movementPattern: "isolation", equipment: "dumbbell", primaryMuscles: ["biceps"], secondaryMuscles: ["forearms"], muscleWeights: { biceps: 0.85, forearms: 0.15 }, dimension: "strength" },
   { id: "concentration-curl", name: "Concentration Curl", movementPattern: "isolation", equipment: "dumbbell", primaryMuscles: ["biceps"], secondaryMuscles: ["forearms"], muscleWeights: { biceps: 0.9, forearms: 0.1 }, dimension: "strength" },
   { id: "reverse-curl", name: "Reverse Curl", movementPattern: "isolation", equipment: "barbell", primaryMuscles: ["forearms", "biceps"], secondaryMuscles: [], muscleWeights: { forearms: 0.5, biceps: 0.5 }, dimension: "strength" },
-  { id: "overhead-triceps-extension", name: "Overhead Triceps Extension", movementPattern: "isolation", equipment: "dumbbell", primaryMuscles: ["triceps"], secondaryMuscles: [], muscleWeights: { triceps: 1.0 }, dimension: "strength" },
+  { id: "overhead-triceps-extension", name: "Overhead Triceps Extension", aliases: ["french press", "overhead extension", "seated overhead extension"], movementPattern: "isolation", equipment: "dumbbell", primaryMuscles: ["triceps"], secondaryMuscles: [], muscleWeights: { triceps: 1.0 }, dimension: "strength" },
 
   // ── Shoulders / traps (extended) ─────────────────────────────────────────────
   { id: "cable-lateral-raise", name: "Cable Lateral Raise", movementPattern: "isolation", equipment: "cable", primaryMuscles: ["side_delt"], secondaryMuscles: ["front_delt", "trap"], muscleWeights: { side_delt: 0.78, front_delt: 0.12, trap: 0.1 }, dimension: "strength" },
@@ -623,6 +631,35 @@ export const EXERCISES: ExerciseDef[] = [
   { id: "donkey-calf-raise", name: "Donkey Calf Raise", movementPattern: "isolation", equipment: "machine", primaryMuscles: ["calves"], secondaryMuscles: [], muscleWeights: { calves: 1.0 }, dimension: "strength" },
   { id: "leg-press-calf-raise", name: "Leg Press Calf Raise", movementPattern: "isolation", equipment: "machine", primaryMuscles: ["calves"], secondaryMuscles: [], muscleWeights: { calves: 1.0 }, dimension: "strength" },
   { id: "single-leg-calf-raise", name: "Single-Leg Calf Raise", movementPattern: "isolation", equipment: "dumbbell", primaryMuscles: ["calves"], secondaryMuscles: [], muscleWeights: { calves: 1.0 }, dimension: "strength" },
+
+  // ── Catalog expansion (skull-crusher variants + commonly-missing movements) ──
+  // Authored + adversarially verified for muscleWeights / anatomy; region emphasis
+  // (where a movement meaningfully biases sub-regions) lives in muscleRegions.ts.
+  { id: "ez-bar-skullcrusher", name: "EZ-Bar Skull Crusher", aliases: ["ez bar skull crusher", "ez-bar lying triceps extension", "ez bar french press", "skull crusher", "lying triceps extension", "french press", "nose breaker"], movementPattern: "isolation", equipment: "barbell", primaryMuscles: ["triceps"], secondaryMuscles: [], muscleWeights: { triceps: 1 }, dimension: "strength" },
+  { id: "dumbbell-skullcrusher", name: "Dumbbell Skull Crusher", aliases: ["lying dumbbell extension", "lying dumbbell triceps extension", "db skull crusher", "dumbbell french press", "neutral-grip skull crusher", "dumbbell lying triceps extension", "dumbbell nose breaker"], movementPattern: "isolation", equipment: "dumbbell", primaryMuscles: ["triceps"], secondaryMuscles: [], muscleWeights: { triceps: 1 }, dimension: "strength" },
+  { id: "floor-press", name: "Barbell Floor Press", aliases: ["floor press", "barbell floor press", "bench press off the floor", "barbell floor bench"], movementPattern: "horizontal_push", equipment: "barbell", primaryMuscles: ["triceps", "chest"], secondaryMuscles: ["front_delt"], muscleWeights: { triceps: 0.42, chest: 0.38, front_delt: 0.2 }, dimension: "strength" },
+  { id: "smith-bench-press", name: "Smith Machine Bench Press", aliases: ["smith bench press", "smith machine bench press", "smith machine chest press", "smith bench", "smith press", "smith machine bench", "smith chest press"], movementPattern: "horizontal_push", equipment: "machine", primaryMuscles: ["chest"], secondaryMuscles: ["triceps", "front_delt"], muscleWeights: { chest: 0.52, triceps: 0.28, front_delt: 0.2 }, dimension: "strength" },
+  { id: "close-grip-pushup", name: "Close-Grip Push-up", aliases: ["close grip pushup", "close-grip push-up", "close grip push-up", "close-grip pushup", "narrow pushup", "narrow-grip pushup", "narrow grip pushup", "narrow push-up", "triceps pushup", "tricep pushup"], movementPattern: "horizontal_push", equipment: "bodyweight", primaryMuscles: ["triceps", "chest"], secondaryMuscles: ["front_delt", "abs"], muscleWeights: { triceps: 0.46, chest: 0.34, front_delt: 0.12, abs: 0.08 }, dimension: "muscular_endurance", isBodyweight: true },
+  { id: "machine-row", name: "Seated Machine Row", aliases: ["machine row", "seated machine row", "hammer strength row", "plate-loaded row", "iso-lateral row", "chest supported machine row", "row machine", "seated row machine", "machine back row"], movementPattern: "horizontal_pull", equipment: "machine", primaryMuscles: ["lat", "trap"], secondaryMuscles: ["rear_delt", "biceps"], muscleWeights: { lat: 0.42, trap: 0.22, rear_delt: 0.16, biceps: 0.2 }, dimension: "strength" },
+  { id: "wide-grip-pulldown", name: "Wide-Grip Lat Pulldown", aliases: ["wide grip pulldown", "wide-grip pulldown", "wide-grip lat pulldown", "wide grip lat pulldown", "wide grip lat pull down", "wide pulldown", "front lat pulldown wide"], movementPattern: "vertical_pull", equipment: "cable", primaryMuscles: ["lat"], secondaryMuscles: ["biceps", "rear_delt", "trap"], muscleWeights: { lat: 0.64, biceps: 0.18, rear_delt: 0.1, trap: 0.08 }, dimension: "strength" },
+  { id: "kroc-row", name: "Kroc Row", aliases: ["kroc row", "krock row", "krok row", "kroczaleski row", "heavy dumbbell row", "high rep dumbbell row", "one arm heavy db row"], movementPattern: "horizontal_pull", equipment: "dumbbell", primaryMuscles: ["lat", "trap"], secondaryMuscles: ["rear_delt", "biceps", "forearms"], muscleWeights: { lat: 0.4, trap: 0.22, rear_delt: 0.14, biceps: 0.16, forearms: 0.08 }, dimension: "strength" },
+  { id: "renegade-row", name: "Renegade Row", aliases: ["renegade row", "renegade rows", "plank row", "plank rows", "dumbbell plank row", "kettlebell renegade row", "push up row"], movementPattern: "horizontal_pull", equipment: "dumbbell", primaryMuscles: ["lat"], secondaryMuscles: ["abs", "obliques", "rear_delt", "trap", "biceps"], muscleWeights: { lat: 0.36, abs: 0.16, obliques: 0.16, rear_delt: 0.1, trap: 0.12, biceps: 0.1 }, dimension: "strength" },
+  { id: "leaning-cable-lateral-raise", name: "Leaning Cable Lateral Raise", aliases: ["leaning lateral raise", "leaning away cable lateral raise", "leaning cable side raise", "lean away lateral raise", "cable lean lateral", "lean-away lateral raise", "leaning side raise"], movementPattern: "isolation", equipment: "cable", primaryMuscles: ["side_delt"], secondaryMuscles: ["front_delt", "trap"], muscleWeights: { side_delt: 0.85, front_delt: 0.07, trap: 0.08 }, dimension: "strength" },
+  { id: "bradford-press", name: "Bradford Press", aliases: ["rocky press", "bradford rocky press", "bradford rocky", "bradford shoulder press", "over-the-head press", "alternating front-to-back press"], movementPattern: "vertical_push", equipment: "barbell", primaryMuscles: ["front_delt", "side_delt"], secondaryMuscles: ["triceps", "trap"], muscleWeights: { front_delt: 0.42, side_delt: 0.33, triceps: 0.13, trap: 0.12 }, dimension: "strength" },
+  { id: "z-press", name: "Z-Press", aliases: ["z press", "seated floor press overhead", "klokov press", "seated strict overhead press", "floor overhead press"], movementPattern: "vertical_push", equipment: "barbell", primaryMuscles: ["front_delt"], secondaryMuscles: ["side_delt", "triceps", "trap", "abs"], muscleWeights: { front_delt: 0.46, side_delt: 0.18, triceps: 0.2, trap: 0.08, abs: 0.08 }, dimension: "strength" },
+  { id: "machine-preacher-curl", name: "Machine Preacher Curl", aliases: ["machine preacher curl", "preacher curl machine", "seated bicep curl machine", "machine bicep curl", "plate-loaded preacher curl", "seated preacher curl", "machine curl"], movementPattern: "isolation", equipment: "machine", primaryMuscles: ["biceps"], secondaryMuscles: ["forearms"], muscleWeights: { biceps: 0.86, forearms: 0.14 }, dimension: "strength" },
+  { id: "bayesian-cable-curl", name: "Bayesian Cable Curl", aliases: ["bayesian curl", "behind-the-body cable curl", "single-arm cable curl", "cable curl behind back", "behind-the-back cable curl"], movementPattern: "isolation", equipment: "cable", primaryMuscles: ["biceps"], secondaryMuscles: ["forearms"], muscleWeights: { biceps: 0.85, forearms: 0.15 }, dimension: "strength" },
+  { id: "cross-body-hammer-curl", name: "Cross-Body Hammer Curl", aliases: ["cross body hammer curl", "cross-body curl", "cross body curl", "pinwheel curl", "pinwheel hammer curl", "neutral grip cross body curl"], movementPattern: "isolation", equipment: "dumbbell", primaryMuscles: ["biceps", "forearms"], secondaryMuscles: [], muscleWeights: { biceps: 0.58, forearms: 0.42 }, dimension: "strength" },
+  { id: "dead-hang", name: "Dead Hang", aliases: ["dead hang", "bar hang", "passive hang", "grip hang", "hanging hold", "scapular hang"], movementPattern: "isometric", equipment: "bodyweight", primaryMuscles: ["forearms"], secondaryMuscles: ["lat", "trap"], muscleWeights: { forearms: 0.7, lat: 0.18, trap: 0.12 }, dimension: "muscular_endurance", isBodyweight: true },
+  { id: "belt-squat", name: "Belt Squat", aliases: ["belt squat", "hip belt squat", "machine belt squat", "loadable belt squat"], movementPattern: "squat", equipment: "machine", primaryMuscles: ["quads", "glutes"], secondaryMuscles: ["hamstrings", "abs"], muscleWeights: { quads: 0.55, glutes: 0.32, hamstrings: 0.1, abs: 0.03 }, dimension: "strength" },
+  { id: "single-leg-hip-thrust", name: "Single-Leg Hip Thrust", aliases: ["single leg hip thrust", "one leg hip thrust", "unilateral hip thrust", "single-leg glute bridge", "single-leg hip extension"], movementPattern: "hinge", equipment: "bodyweight", primaryMuscles: ["glutes"], secondaryMuscles: ["hamstrings", "quads"], muscleWeights: { glutes: 0.7, hamstrings: 0.22, quads: 0.08 }, dimension: "strength", isBodyweight: true },
+  { id: "standing-leg-curl", name: "Standing Leg Curl", aliases: ["standing leg curl", "standing hamstring curl", "single leg standing curl", "upright leg curl", "machine standing leg curl"], movementPattern: "isolation", equipment: "machine", primaryMuscles: ["hamstrings"], secondaryMuscles: [], muscleWeights: { hamstrings: 1 }, dimension: "strength" },
+  { id: "zercher-squat", name: "Zercher Squat", aliases: ["zercher squat", "zercher", "elbow squat", "front-crook squat", "zercher front squat"], movementPattern: "squat", equipment: "barbell", primaryMuscles: ["quads", "glutes"], secondaryMuscles: ["abs", "trap", "lower_back", "hamstrings"], muscleWeights: { quads: 0.42, glutes: 0.28, abs: 0.12, trap: 0.1, hamstrings: 0.04, lower_back: 0.04 }, dimension: "strength" },
+  { id: "hanging-knee-raise", name: "Hanging Knee Raise", aliases: ["hanging knee raise", "hanging knee tuck", "hanging knee-ups", "bent-knee hanging raise", "bent-knee hanging leg raise", "knee raises"], movementPattern: "isolation", equipment: "bodyweight", primaryMuscles: ["abs"], secondaryMuscles: ["obliques", "forearms"], muscleWeights: { abs: 0.7, obliques: 0.17, forearms: 0.13 }, dimension: "muscular_endurance", isBodyweight: true },
+  { id: "mountain-climber", name: "Mountain Climber", aliases: ["mountain climbers", "mountain climb", "running plank", "plank knee drives", "alternating knee drives", "cross-body mountain climber"], movementPattern: "rotation", equipment: "bodyweight", primaryMuscles: ["abs"], secondaryMuscles: ["obliques", "quads", "front_delt"], muscleWeights: { abs: 0.55, obliques: 0.24, quads: 0.13, front_delt: 0.08 }, dimension: "muscular_endurance", isBodyweight: true },
+  { id: "l-sit", name: "L-Sit", aliases: ["l sit", "l-sit hold", "l hold", "parallette l-sit", "l-seat", "ell sit"], movementPattern: "isometric", equipment: "bodyweight", primaryMuscles: ["abs"], secondaryMuscles: ["quads", "triceps", "lat", "forearms", "obliques"], muscleWeights: { abs: 0.5, quads: 0.17, triceps: 0.12, lat: 0.08, forearms: 0.08, obliques: 0.05 }, dimension: "muscular_endurance", isBodyweight: true },
+  { id: "captains-chair-knee-raise", name: "Captain's Chair Knee Raise", aliases: ["captains chair knee raise", "captain's chair leg raise", "captains chair leg raise", "vertical knee raise", "vkr knee raise", "roman chair knee raise", "power tower knee raise", "knee raise"], movementPattern: "isolation", equipment: "machine", primaryMuscles: ["abs"], secondaryMuscles: ["obliques"], muscleWeights: { abs: 0.8, obliques: 0.2 }, dimension: "muscular_endurance", isBodyweight: true },
+  { id: "flutter-kicks", name: "Flutter Kicks", aliases: ["flutter kick", "scissor kicks", "scissor kick", "lying flutter kicks", "supine flutter kicks"], movementPattern: "isolation", equipment: "bodyweight", primaryMuscles: ["abs"], secondaryMuscles: ["quads", "obliques"], muscleWeights: { abs: 0.7, quads: 0.16, obliques: 0.14 }, dimension: "muscular_endurance", isBodyweight: true },
 ];
 
 export const EXERCISE_BY_ID: Record<string, ExerciseDef> = Object.fromEntries(

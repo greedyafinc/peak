@@ -12,7 +12,7 @@ import { C, mono } from "../theme";
 import { inputStyle } from "./ui";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import {
-  GYM_EXERCISES, GYM_CATEGORIES, categoryOf, matchesQuery, alternativesFor,
+  GYM_EXERCISES, GYM_CATEGORIES, muscleSections, matchesQuery, alternativesFor,
   exerciseSubtitle, type ExerciseCategory,
 } from "../data/exerciseCatalog";
 import type { ExerciseDef } from "../types";
@@ -59,18 +59,20 @@ export function ExercisePickerModal({
     const hide = (list: ExerciseDef[]) =>
       mode === "swap" ? list.filter((e) => e.id !== swapForExerciseId && !existing.has(e.id)) : list;
 
+    // Search → flat hits, still grouped under their "Category · Muscle" sub-headers.
     if (searching) {
-      return [{ title: null, items: hide(GYM_EXERCISES.filter((e) => matchesQuery(e, q))) }];
+      const pool = hide(GYM_EXERCISES.filter((e) => matchesQuery(e, q)));
+      return muscleSections(GYM_CATEGORIES, pool).map((s) => ({ title: s.label, items: s.items }));
     }
+    // Swap → data-ranked alternatives as one flat list (no muscle split).
     if (mode === "swap" && filter === "Best" && swapForExerciseId) {
       return [{ title: "Best alternatives", items: hide(alternativesFor(swapForExerciseId)) }];
     }
-    if (filter === "All" || filter === "Best") {
-      return GYM_CATEGORIES
-        .map((cat) => ({ title: cat as string, items: hide(GYM_EXERCISES.filter((e) => categoryOf(e) === cat)) }))
-        .filter((s) => s.items.length > 0);
-    }
-    return [{ title: filter, items: hide(GYM_EXERCISES.filter((e) => categoryOf(e) === filter)) }];
+    // Browse → region chip selects which categories show; each splits into muscle sub-headers.
+    const cats: ExerciseCategory[] = filter === "All" || filter === "Best" ? GYM_CATEGORIES : [filter];
+    return muscleSections(cats, GYM_EXERCISES)
+      .map((s) => ({ title: s.label, items: hide(s.items) }))
+      .filter((s) => s.items.length > 0);
   }, [q, filter, mode, swapForExerciseId, existing]);
 
   if (!open) return null;
