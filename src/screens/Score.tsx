@@ -3,8 +3,9 @@
 // floor isn't met), a capability radar, and the dimension → sub-category → leaf
 // tree with per-leaf provenance + confidence and Test prompts for untested leaves.
 
-import { useMemo, type CSSProperties } from "react";
+import { useMemo } from "react";
 import { usePeak } from "../store";
+import { SCREEN_STYLE, contentPad } from "./layoutPresets";
 import type { DimensionRollup, SubcategoryRollup } from "../engine/rollup";
 import type { DimensionId, LeafScore } from "../types";
 import {
@@ -15,6 +16,7 @@ import {
 } from "../data/capabilityTree";
 import { BENCHMARK_BY_LEAF } from "../data/benchmarks";
 import { Radar } from "../viz/Radar";
+import { fmtHeight } from "../units";
 import { C, mono, sans } from "../theme";
 import {
   Card,
@@ -46,15 +48,6 @@ const DIM_ABBR: Record<DimensionId, string> = {
   consistency: "CON",
 };
 
-const pageWrap: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  overflowY: "auto",
-  padding: "58px 0 104px",
-  animation: "scrIn .28s ease",
-};
-const content: CSSProperties = { padding: "0 18px" };
-
 export function Score() {
   const s = usePeak();
   const { headline, dimensions } = s.derived;
@@ -62,7 +55,7 @@ export function Score() {
 
   const build = biometric?.build;
   const cohortLabel = build
-    ? `vs ${build.sex === "unspecified" ? "your build" : build.sex + "s"}, ${Math.round(build.heightCm)}cm, ${build.ageYears}`
+    ? `vs ${build.sex === "unspecified" ? "your build" : build.sex + "s"}, ${fmtHeight(build.heightCm, s.data.unitSystem)}, ${build.ageYears}`
     : null;
 
   // Performed dimensions only (consistency is not in `dimensions`, but guard anyway).
@@ -90,9 +83,9 @@ export function Score() {
   );
 
   return (
-    <div style={pageWrap}>
+    <div style={SCREEN_STYLE}>
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
-      <div style={content}>
+      <div style={contentPad()}>
         {headline.rendered ? (
           <HeadlineHero headline={headline} consistency={consistency} cohortLabel={cohortLabel} />
         ) : (
@@ -108,7 +101,7 @@ export function Score() {
 
       {/* ── RADAR ────────────────────────────────────────────────────────── */}
       {tested.length > 0 && (
-        <div style={{ ...content, marginTop: 22 }}>
+        <div style={{ ...contentPad(), marginTop: 22 }}>
           <Card style={{ padding: "14px 10px 6px" }}>
             <div style={{ padding: "0 8px 4px" }}>
               <Kicker>Capability radar</Kicker>
@@ -119,7 +112,7 @@ export function Score() {
       )}
 
       {/* ── DIMENSION TREE ───────────────────────────────────────────────── */}
-      <div style={{ ...content, marginTop: 24 }}>
+      <div style={{ ...contentPad(), marginTop: 24 }}>
         <SectionTitle sub="Tap any dimension to walk its sub-categories and leaves.">Capability tree</SectionTitle>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {performed.map((d) => (
@@ -136,11 +129,43 @@ export function Score() {
       </div>
 
       {/* ── METHODOLOGY ──────────────────────────────────────────────────── */}
-      <div style={{ ...content, marginTop: 22 }}>
+      <div style={{ ...contentPad(), marginTop: 22 }}>
         <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.55, padding: "0 4px" }}>
           Strength uses height-conditioned population data — your bodyweight is deliberately excluded. Every score is
           labeled with its data source; tap any leaf to see it. Coverage is shown alongside your score, never folded into it.
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Momentum badge ──────────────────────────────────────────────────────────
+// The "Momentum · not capability" strip (§2.7) — shown under both heroes; momentum
+// is recomputed here so call sites don't repeat it. Deliberately SEPARATE from the
+// capability score: momentum/streak measures consistency, not how good you are.
+function MomentumBadge({ consistency }: { consistency: import("../types").ConsistencyTrack }) {
+  const momentum = Math.round(consistency.momentum * 100);
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginTop: 12,
+        padding: "11px 14px",
+        borderRadius: 13,
+        background: C.inner,
+        border: `1px solid ${C.line2}`,
+      }}
+    >
+      <div style={{ fontSize: 11.5, color: C.muted }}>
+        Momentum <span style={{ color: C.muted2 }}>· not capability</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, color: C.mint }}>{momentum}%</span>
+        <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.orange }}>
+          {consistency.currentStreakDays}d streak
+        </span>
       </div>
     </div>
   );
@@ -158,7 +183,6 @@ function HeadlineHero({
 }) {
   const score = score100(headline.peakScore);
   const coverage = Math.round(headline.coverage * 100);
-  const momentum = Math.round(consistency.momentum * 100);
   return (
     <Card glow={C.accent} style={{ padding: "20px 18px", position: "relative", overflow: "hidden" }}>
       {/* subtle accent gradient */}
@@ -203,28 +227,7 @@ function HeadlineHero({
       </div>
 
       {/* momentum — SEPARATE from capability (§2.7) */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginTop: 12,
-          padding: "11px 14px",
-          borderRadius: 13,
-          background: C.inner,
-          border: `1px solid ${C.line2}`,
-        }}
-      >
-        <div style={{ fontSize: 11.5, color: C.muted }}>
-          Momentum <span style={{ color: C.muted2 }}>· not capability</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, color: C.mint }}>{momentum}%</span>
-          <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.orange }}>
-            🔥 {consistency.currentStreakDays}d
-          </span>
-        </div>
-      </div>
+      <MomentumBadge consistency={consistency} />
     </Card>
   );
 }
@@ -319,26 +322,7 @@ function PlacementHero({
         </div>
       </Card>
 
-      {momentum > 0 || consistency.currentStreakDays > 0 ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginTop: 12,
-            padding: "11px 14px",
-            borderRadius: 13,
-            background: C.inner,
-            border: `1px solid ${C.line2}`,
-          }}
-        >
-          <div style={{ fontSize: 11.5, color: C.muted }}>Momentum · not capability</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, color: C.mint }}>{momentum}%</span>
-            <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.orange }}>🔥 {consistency.currentStreakDays}d</span>
-          </div>
-        </div>
-      ) : null}
+      {momentum > 0 || consistency.currentStreakDays > 0 ? <MomentumBadge consistency={consistency} /> : null}
     </div>
   );
 }

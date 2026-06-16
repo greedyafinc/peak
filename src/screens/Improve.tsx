@@ -4,20 +4,15 @@
 //   goals, and methodology transparency (§5.6 — the trust differentiator).
 import { useMemo } from "react";
 import { usePeak } from "../store";
+import { SCREEN_STYLE, contentPad } from "./layoutPresets";
 import { C, mono } from "../theme";
 import {
-  Card, TierBadge, SectionTitle, Kicker, GhostButton,
+  Card, TierBadge, SectionTitle, SectionHeader, GhostButton,
   SourceTag, PercentileBar, pctLabel,
 } from "../components/ui";
 import { LEAF_BY_ID, DIM_META } from "../data/capabilityTree";
 import { BENCHMARK_BY_LEAF } from "../data/benchmarks";
 import type { LeafScore, Projection, GoalV3, MethodologyNote } from "../types";
-
-const SCREEN: React.CSSProperties = {
-  position: "absolute", inset: 0, overflowY: "auto", padding: "58px 0 104px",
-  animation: "scrIn .28s ease",
-};
-const PAD: React.CSSProperties = { padding: "0 18px" };
 
 function projLabel(p: Projection): { text: string; color: string } {
   switch (p.state) {
@@ -58,17 +53,17 @@ export function Improve() {
   }, [data.leafScores]);
 
   return (
-    <div style={SCREEN}>
-      <div style={PAD}>
-        <Kicker>Improve · §1.2</Kicker>
-        <div style={{ height: 8 }} />
-        <SectionTitle sub="The most efficient path up — raising your weakest tested capability moves your Peak Score the most.">
-          Top opportunities
-        </SectionTitle>
+    <div style={SCREEN_STYLE}>
+      <div style={contentPad()}>
+        <SectionHeader
+          kicker="Improve · §1.2"
+          title="Top opportunities"
+          sub="The most efficient path up — raising your weakest tested capability moves your Peak Score the most."
+        />
       </div>
 
       {weakest.length === 0 ? (
-        <div style={PAD}>
+        <div style={contentPad()}>
           <Card style={{ textAlign: "center", padding: "26px 20px" }}>
             <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.55 }}>
               Test a few capabilities to reveal your most efficient paths to a higher score.
@@ -76,7 +71,7 @@ export function Improve() {
           </Card>
         </div>
       ) : (
-        <div style={{ ...PAD, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ ...contentPad(), display: "flex", flexDirection: "column", gap: 10 }}>
           {weakest.map((ls) => {
             const leaf = LEAF_BY_ID[ls.leafId];
             const dim = leaf ? DIM_META[leaf.dimension] : null;
@@ -113,19 +108,17 @@ export function Improve() {
       {/* ── Coverage opportunities ── */}
       {coverage.length > 0 && (
         <>
-          <div style={{ ...PAD, paddingTop: 22 }}>
+          <div style={{ ...contentPad(), paddingTop: 22 }}>
             <SectionTitle sub="Unlock more of your picture — each test adds coverage and is rewarded, never penalized.">
               Coverage opportunities
             </SectionTitle>
           </div>
-          <div style={{ ...PAD, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ ...contentPad(), display: "flex", flexDirection: "column", gap: 8 }}>
             {coverage.map((leafId) => {
-              const proto = BENCHMARK_BY_LEAF[leafId];
               const leaf = LEAF_BY_ID[leafId];
               const dim = leaf ? DIM_META[leaf.dimension] : null;
               return (
                 <Card key={leafId} onClick={() => s.set({ benchOpen: true, benchLeaf: leafId })} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14 }}>
-                  <span style={{ fontSize: 22 }}>{proto.icon}</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{leaf?.label ?? leafId}</div>
                     <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{dim?.label} · untested</div>
@@ -139,13 +132,13 @@ export function Improve() {
       )}
 
       {/* ── Goals ── */}
-      <div style={{ ...PAD, paddingTop: 22 }}>
+      <div style={{ ...contentPad(), paddingTop: 22 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <SectionTitle>Goals</SectionTitle>
           <GhostButton onClick={() => s.set({ goalOpen: true })}>＋ New goal</GhostButton>
         </div>
       </div>
-      <div style={{ ...PAD }}>
+      <div style={{ ...contentPad() }}>
         {data.goals.length === 0 ? (
           <Card style={{ textAlign: "center", padding: "22px 20px" }}>
             <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.5 }}>No goals yet. Set one to track a target and see a projected ETA.</div>
@@ -158,14 +151,14 @@ export function Improve() {
       </div>
 
       {/* ── Methodology transparency (§5.6) ── */}
-      <div style={{ ...PAD, paddingTop: 24 }}>
-        <Kicker>Methodology · §5.6</Kicker>
-        <div style={{ height: 8 }} />
-        <SectionTitle sub="We show our work. Every percentile is labeled with its data source.">
-          How your scores are made
-        </SectionTitle>
+      <div style={{ ...contentPad(), paddingTop: 24 }}>
+        <SectionHeader
+          kicker="Methodology · §5.6"
+          title="How your scores are made"
+          sub="We show our work. Every percentile is labeled with its data source."
+        />
       </div>
-      <div style={{ ...PAD, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ ...contentPad(), display: "flex", flexDirection: "column", gap: 10 }}>
         {s.derived.methodology.length === 0 ? (
           <Card style={{ textAlign: "center", padding: "22px 20px" }}>
             <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.5 }}>
@@ -195,7 +188,6 @@ function GoalCard({ goal }: { goal: GoalV3 }) {
     <Card>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 11, alignItems: "center" }}>
-          <span style={{ fontSize: 24 }}>{goal.icon}</span>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{goal.name}</div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>

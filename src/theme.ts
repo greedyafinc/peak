@@ -23,10 +23,23 @@ export const C = {
   line: "rgba(255,255,255,0.07)",
   line2: "rgba(255,255,255,0.08)",
   line3: "rgba(255,255,255,0.06)",
+
+  untested: "#23262d",   // neutral fill for an untested muscle (heat map + legend)
+  silhouette: "#181b21", // full-body silhouette fill under the muscle outlines
 } as const;
 
 export const mono = "'JetBrains Mono', monospace";
 export const sans = "'Space Grotesk', sans-serif";
+
+// Border-radius scale — the recurring corner radii across the UI. Off-scale
+// values (5, 6, 10, 13, 14, …) stay as literals on purpose.
+export const radius = { sm: 4, md: 8, lg: 12, xl: 16, xxl: 20, pill: 30 } as const;
+
+// Glow/overlay helpers — the repeated drop-shadow / box-shadow halo patterns.
+export const glow = {
+  drop: (c: string, r = 9) => `drop-shadow(0 0 ${r}px ${c})`,
+  box: (c: string, r = 14) => `0 0 ${r}px ${c}`,
+};
 
 // Strength → thermal color ramp (cold blue → hot red).
 export function heat(s: number): string {
@@ -62,3 +75,9 @@ const CAT_COLORS: Record<string, string> = {
 export function catColor(cat: string): string {
   return CAT_COLORS[cat] ?? C.accent;
 }
+
+/** Hex color (#rrggbb) + alpha → rgba() string. */
+export const hexA = (hex: string, alpha: number): string => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+};

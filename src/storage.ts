@@ -12,6 +12,11 @@
 const KEY = "peak.peakdata.v3";
 const STORE_FILE = "peak.json";
 
+// Secondary key: the in-progress live Gym session, persisted separately so a
+// reload mid-workout never loses it (it is NOT scored capability data — it only
+// becomes a real Session on "Finish").
+export const ACTIVE_SESSION_KEY = "peak.active_session.v1";
+
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -26,19 +31,27 @@ function safeParse<T>(raw: string | null): T | null {
 }
 
 // ── localStorage (web + fallback) ────────────────────────────────────────────
-function lsGet<T>(): T | null {
+function lsGet<T>(key: string): T | null {
   try {
-    return safeParse<T>(localStorage.getItem(KEY));
+    return safeParse<T>(localStorage.getItem(key));
   } catch {
     return null;
   }
 }
 
-function lsSet<T>(data: T): void {
+function lsSet<T>(key: string, data: T): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(data));
+    localStorage.setItem(key, JSON.stringify(data));
   } catch {
     /* private mode / quota — nothing else we can do */
+  }
+}
+
+function lsRemove(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* nothing else we can do */
   }
 }
 
@@ -46,6 +59,7 @@ function lsSet<T>(data: T): void {
 type TauriStore = {
   get<T>(key: string): Promise<T | undefined>;
   set(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<boolean>;
   save(): Promise<void>;
 };
 let storePromise: Promise<TauriStore> | null = null;
@@ -59,39 +73,59 @@ function tauriStore(): Promise<TauriStore> {
   return storePromise;
 }
 
-/** Synchronous read — returns persisted data on web, or null when we must wait
- *  on the async native backend. Use to seed the very first render. */
-export function loadSync<T>(): T | null {
+/** Synchronous read of any key — returns persisted data on web, or null when we
+ *  must wait on the async native backend. Use to seed the very first render. */
+export function loadSyncAt<T>(key: string): T | null {
   if (isTauri()) return null;
-  return lsGet<T>();
+  return lsGet<T>(key);
 }
 
-/** Full read. Native goes through the Store plugin (falling back to
+/** Full read of any key. Native goes through the Store plugin (falling back to
  *  localStorage if the plugin is somehow unavailable). */
-export async function load<T>(): Promise<T | null> {
+export async function loadAt<T>(key: string): Promise<T | null> {
   if (isTauri()) {
     try {
       const store = await tauriStore();
-      const value = await store.get<T>(KEY);
+      const value = await store.get<T>(key);
       return value ?? null;
     } catch {
-      return lsGet<T>();
+      return lsGet<T>(key);
     }
   }
-  return lsGet<T>();
+  return lsGet<T>(key);
 }
 
-/** Persist the whole document. */
-export async function save<T>(data: T): Promise<void> {
+/** Persist a value under any key. */
+export async function saveAt<T>(key: string, data: T): Promise<void> {
   if (isTauri()) {
     try {
       const store = await tauriStore();
-      await store.set(KEY, data);
+      await store.set(key, data);
       await store.save();
       return;
     } catch {
       /* fall through to localStorage so data is never silently lost */
     }
   }
-  lsSet(data);
+  lsSet(key, data);
 }
+
+/** Remove a key (e.g. after a live session is finished or discarded). */
+export async function removeAt(key: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      const store = await tauriStore();
+      await store.delete(key);
+      await store.save();
+      return;
+    } catch {
+      /* fall through to localStorage */
+    }
+  }
+  lsRemove(key);
+}
+
+// ── Canonical-document convenience wrappers (the single PeakData doc) ─────────
+export const loadSync = <T>(): T | null => loadSyncAt<T>(KEY);
+export const load = <T>(): Promise<T | null> => loadAt<T>(KEY);
+export const save = <T>(data: T): Promise<void> => saveAt<T>(KEY, data);

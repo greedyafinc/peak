@@ -1,13 +1,20 @@
 // Peak scoring engine — inferred per-muscle strength (§4.3, infer/1).
 //
-// Moat property #2: per-muscle strength is INFERRED from the compound + isolation
-// sets the user already logs, never max-tested in isolation. The pipeline:
-//   1. per-set est-1RM (Epley) for sets that carry a weight
-//   2. attribute est1RM × muscleWeights[g] to each muscle group g
+// Moat property #2: per-muscle strength is INFERRED from the sets the user already logs,
+// never max-tested in isolation. Each exercise maps to one or more STRENGTH REFERENCES
+// (§5.3) — the published ×bodyweight standard for its movement — and a muscle is scored
+// against the standard for a movement that actually trains it. This replaces the old
+// `est1RM × muscleWeights[g]` attribution against a single compound proxy, whose `frac`
+// only cancelled for bench→chest and read every isolation lift at the 99th percentile.
+// The pipeline:
+//   1. per-set est-1RM (Epley) on the barbell-equivalent load (effectiveLoadKg) for sets
+//      that carry a weight
+//   2. attribute that est-1RM to the primary muscle of EACH reference the exercise maps to
+//      (a chin-up scores both lat and biceps) — on the reference's own load scale, no frac
 //   3. quality weight = clamp(0.5 + 0.05×(rpe−5), 0.5, 1.0); 0.7 if no rpe
 //   4. recency weight = 0.5^(daysAgo / recencyHalfLifeDays)
-//   5. combine = recency&quality-weighted mean of the TOP-K attributed contributions
-//   6. percentile each group's estStrength via lookupCohortDist(`strength.<g>`)
+//   5. combine = recency&quality-weighted mean of the TOP-K est-1RMs
+//   6. percentile each group's estStrength against its reference dist via lookupCohortDist
 // Untested groups (no contributing sets) → all-null estimate, source "untested".
 //
 // PURE / DETERMINISTIC given (sessions, build, asOf).
@@ -22,6 +29,9 @@ import type {
 import { INFER, MODELS } from "../constants";
 import { ALL_MUSCLES, LEAF_BY_ID } from "../data/capabilityTree";
 import { EXERCISE_BY_ID } from "../data/exercises";
+import { effectiveLoadKg } from "../data/exerciseCatalog";
+import { referencesForExercise, muscleForReference } from "../data/distributions/strength";
+import { est1RM, round1 } from "./math";
 import { buildCohort } from "./cohort";
 import { lookupCohortDist } from "../data/distributions";
 import {
@@ -35,12 +45,6 @@ import {
 } from "./score";
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
-
-/** §4.3 step 1 — Epley est-1RM. A 1-rep set returns its own weight. */
-export function epley1RM(weightKg: number, reps: number): number {
-  const r = reps > 0 ? reps : 1;
-  return weightKg * (1 + r / INFER.epleyDivisor);
-}
 
 /** §4.3 step 3 — execution-quality weight from RPE (0.7 when RPE absent). */
 function qualityWeight(rpe: number | null): number {
@@ -73,23 +77,28 @@ export function inferMuscleStrength(
     for (const entry of session.entries) {
       const exDef = EXERCISE_BY_ID[entry.exerciseId];
       if (!exDef) continue; // unknown exercise — cannot attribute
-      const weights = exDef.muscleWeights;
+      // The strength reference(s) this movement is scored against (§5.3). A muscle is
+      // inferred only from movements that actually train it; an exercise with no reference
+      // (pure cardio, untracked) contributes nothing to strength.
+      const refs = referencesForExercise(entry.exerciseId);
+      if (refs.length === 0) continue;
       for (const set of entry.sets) {
         // Only sets with an actual external weight produce an est-1RM (§4.3 step 1).
         const w = set.weight?.value;
         if (w == null || w <= 0) continue;
-        const est = epley1RM(w, set.reps);
+        // Convert the ENTERED load (per-arm for dumbbell/kettlebell) to the barbell-
+        // equivalent scale the reference ladders are calibrated to, BEFORE Epley.
+        const est = est1RM(effectiveLoadKg(exDef, w), set.reps);
         const daysAgo = daysBetween(set.derived?.[0]?.computedAt ?? session.createdAt, asOf);
         const recency = recencyFactor(daysAgo, INFER.recencyHalfLifeDays);
         const quality = qualityWeight(set.rpe);
         const w_set = quality * recency;
 
-        for (const g of Object.keys(weights) as MuscleGroup[]) {
-          const mw = weights[g];
-          // Only meaningful movers infer a muscle (§4.3 / infer/1 minAttribution) —
-          // incidental low-weight contributions leave the muscle untested, not weak.
-          if (mw == null || mw < INFER.minAttribution) continue;
-          (byGroup[g] ??= []).push({ attributed: est * mw, weight: w_set, setId: set.id });
+        for (const refId of refs) {
+          // Attribute the FULL est-1RM to the reference's primary muscle, on that
+          // reference's own load scale (no muscleWeight frac — the dist is the reference's).
+          const g = muscleForReference(refId);
+          (byGroup[g] ??= []).push({ attributed: est, weight: w_set, setId: set.id });
           // Track the most recent contributing session timestamp per group.
           const prev = lastUpdatedByGroup[g];
           if (!prev || session.createdAt > prev) lastUpdatedByGroup[g] = session.createdAt;
@@ -183,10 +192,6 @@ export function inferMuscleStrength(
   }
 
   return result;
-}
-
-function round1(v: number): number {
-  return Math.round(v * 10) / 10;
 }
 
 // Re-exported helper used by the integration surface to know which sets fed a group.

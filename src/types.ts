@@ -25,6 +25,11 @@ export type Unit =
 
 export type Quantity = { value: number; unit: Unit };
 
+// Display/entry preference. The store is always canonical metric; this only
+// changes how values are shown and entered (see src/units.ts). One global flag
+// flips every input + display; subtle per-field toggles all write to it.
+export type UnitSystem = "metric" | "imperial";
+
 // ── Controlled vocabularies (§6.3) ───────────────────────────────────────────
 export type DimensionId =
   | "strength"            // "Maximal Strength"
@@ -48,6 +53,29 @@ export type MuscleGroup =
   | "chest" | "front_delt" | "side_delt" | "rear_delt" | "biceps" | "triceps"
   | "forearms" | "lat" | "trap" | "lower_back" | "abs" | "obliques"
   | "glutes" | "quads" | "hamstrings" | "calves" | "tibialis";
+
+// Granular sub-region (head/portion) of a MuscleGroup — the ATTRIBUTION layer below
+// the scoring groups (§4.3 extension). Different exercises bias these differently
+// (lower vs upper chest, long vs lateral triceps head, VL vs VM quad). Metadata,
+// parent mapping, and per-exercise emphasis live in src/data/muscleRegions.ts; the
+// regions of any group always sum back to that group's existing muscleWeight, so the
+// scoring spine is untouched. Whole-muscle groups (delts, lower back, tibialis) do not
+// subdivide — their region id equals the group id.
+export type MuscleRegion =
+  | "chest_upper" | "chest_mid" | "chest_lower"
+  | "triceps_long" | "triceps_lateral" | "triceps_medial"
+  | "biceps_long_head" | "biceps_short_head" | "biceps_brachialis"
+  | "lat_upper" | "lat_lower"
+  | "trap_upper" | "trap_mid" | "trap_lower"
+  | "quads_rectus_femoris" | "quads_vastus_lateralis" | "quads_vastus_medialis"
+  | "hamstrings_lateral" | "hamstrings_medial"
+  | "glutes_max_lower" | "glutes_max_upper" | "glutes_med_min"
+  | "abs_upper" | "abs_lower" | "abs_deep"
+  | "obliques_external" | "obliques_internal"
+  | "forearms_flexors" | "forearms_extensors" | "forearms_brachioradialis"
+  | "calves_gastroc_medial" | "calves_gastroc_lateral" | "calves_soleus"
+  // whole-muscle regions (group does not subdivide):
+  | "front_delt" | "side_delt" | "rear_delt" | "lower_back" | "tibialis";
 
 export type MovementPattern =
   | "horizontal_push" | "vertical_push" | "horizontal_pull" | "vertical_pull"
@@ -206,6 +234,7 @@ export type DimensionMeta = {
 export type ExerciseDef = {
   id: string;                  // stable, e.g. "barbell-bench-press"
   name: string;
+  aliases?: string[];          // alternate names / gym nicknames for search (e.g. "skull crusher", "rdl")
   movementPattern: MovementPattern;
   equipment: Equipment;
   primaryMuscles: MuscleGroup[];
@@ -235,13 +264,16 @@ export type BenchmarkProtocol = {
   confidenceCeiling: number;   // [0,1]
   // beta UX helpers:
   category: string;            // grouping label for the benchmark picker
-  icon: string;
   starter?: boolean;           // part of the recommended onboarding starter set
 };
 
 // RawMeasurement is a typed union keyed by `kind` (§4.2).
 export type RawMeasurement =
-  | { kind: "max_load"; load: Quantity; reps: number }
+  // `load`/`reps` are ALWAYS the actual variant lifted (canonical, honest). For a
+  // non-standard variant (e.g. dumbbell bench), `variantId`/`equipment` record what
+  // was done; the engine maps the est-1RM onto the standard's curve via a documented
+  // conversion factor (§4.2 flexible benchmarking) — the raw is never rewritten.
+  | { kind: "max_load"; load: Quantity; reps: number; variantId?: string; equipment?: Equipment }
   | { kind: "rep_max"; reps: number; load?: Quantity }
   | { kind: "time_for_distance"; distance: Quantity; duration: Quantity }
   | { kind: "distance_in_time"; distance: Quantity; duration: Quantity }
@@ -333,11 +365,56 @@ export type Session = {
   title: string;
   build: BuildSnapshot;
   composition: CompositionSnapshot | null;
-  programId?: string;
+  programId?: string;          // FK → RoutineDef.id when started from a routine
   entries: ExerciseEntry[];
   cardio?: CardioSetRecord[];
   notes?: string;
   durationMin?: number;
+};
+
+// ── Routines / templates (§6.4 program scaffolding) ──────────────────────────
+// A reusable Gym template the live session can be seeded from. Built-ins ship as
+// reference data; user-saved routines live in PeakData.routines. Suggested sets /
+// rep range are scaffolding only — the honest raw events are still the logged sets.
+export type RoutineExercise = {
+  exerciseId: string;          // FK → ExerciseDef
+  sets: number;                // suggested working-set count
+  repLow?: number;             // suggested rep-range low
+  repHigh?: number;            // suggested rep-range high
+};
+
+export type RoutineDef = {
+  id: string;
+  name: string;
+  focus?: string;              // short tag, e.g. "Push", "Full Body"
+  blurb?: string;
+  exercises: RoutineExercise[];
+  builtIn?: boolean;           // true for shipped templates
+  createdAt?: string;          // ISO-8601, for user-saved routines
+};
+
+// ── Weekly routine plan (§6.4 — recurring weekly agenda) ─────────────────────
+// A recurring 7-day template the Feed's "This Week" card renders against. Each
+// weekday (index 0 = Monday … 6 = Sunday) holds zero or more plan items; an empty
+// day is a rest day. A Gym item links to a RoutineDef (so "Start" can seed the live
+// session); cardio / sport / mobility items carry a free-text title + detail.
+//
+// Completion is EARNED, never fabricated: a planned day reads "done" when a real
+// Session is logged that calendar day, OR the user explicitly ticks it off — those
+// manual ticks live in `completions` as "YYYY-MM-DD" local-day keys.
+export type WeeklyPlanItem = {
+  id: string;
+  type: WorkoutType;           // drives the accent + status semantics (Gym/Cardio/Sport/Mobility)
+  routineId?: string;          // FK → RoutineDef.id when type === "Gym" and linked to a routine
+  title: string;               // display name, e.g. "Push Day", "Run · 5K"
+  detail?: string;             // sub line, e.g. "Tempo · 28 min" (Gym items derive it live)
+};
+
+export type WeeklyPlan = {
+  days: WeeklyPlanItem[][];    // length 7, index 0 = Monday … 6 = Sunday
+  completions: string[];       // "YYYY-MM-DD" local days manually ticked done
+  createdAt: string;           // ISO-8601 — when the plan was first set up
+  updatedAt: string;           // ISO-8601 — last structural edit
 };
 
 // ── Capability scores (§2.2, §6.6) ───────────────────────────────────────────
@@ -447,7 +524,7 @@ export type Headline = {
 export type SeedSourceId =
   | "SYMMETRIC_STRENGTH" | "EXRX" | "MILITARY_FITNESS" | "CDC" | "WHO"
   | "NHANES_DEXA" | "NHANES_ANTHRO" | "WMA_AGE_GRADED" | "BALANCE_NORMS" | "AGILITY_NORMS"
-  | "ACSM" | "COOPER";
+  | "ACSM" | "COOPER" | "RUNNING_LEVEL" | "TRIATHLON_NORMS";
 
 export type SeedSource = {
   id: SeedSourceId;
@@ -495,10 +572,21 @@ export type Cohort = { sex: Sex; heightCm: number; ageYears: number };
 // (§2.2): mean/sd are conditioned on the immutable build, so percentile ranks the
 // user against similar-build people. `lowerIsBetter` flips direction (run/sprint
 // times). `confidenceBasis` is the seed's base confidence before per-user factors.
+/**
+ * Optional measurement-space transform for a cohort distribution. When set, `mean`/`sd`
+ * live in the TRANSFORMED space and a raw value is mapped through the transform before
+ * the z-score. `log1p` (x → ln(1+x)) models a right-skewed, zero-floored metric
+ * (rep counts, hold times) so the curve never leaks probability below zero — fixing the
+ * symmetric-Gaussian-over-a-count bug (e.g. pull-ups, single-leg-stance).
+ */
+export type DistTransform = "log1p";
+
 export type CohortDist = {
-  mean: number;          // expected RAW value for this cohort, in the leaf's unit
-  sd: number;            // spread of the RAW value for this cohort
+  mean: number;          // expected RAW value for this cohort, in the leaf's unit (transformed space when `transform` set)
+  sd: number;            // spread of the RAW value for this cohort (transformed space when `transform` set)
   lowerIsBetter: boolean;
+  /** When set, fit + percentile happen in this transformed space (right-skewed zero-floored metrics). */
+  transform?: DistTransform;
   seedSources: SeedSourceId[];
   curveProvenance: CurveProvenance;
   confidenceBasis: number; // [0,1]
@@ -515,7 +603,6 @@ export type GoalV3 = {
   id: string;
   name: string;
   dimension: DimensionId;
-  icon: string;
   createdAt: string;
   target?: { nodeId: string; targetPercentileRaw?: number; targetQuantity?: Quantity };
   provenance: Provenance;
@@ -542,8 +629,11 @@ export type PeakData = {
     generatedBy: string;
   };
   onboarded: boolean;
+  unitSystem: UnitSystem;      // display/entry preference (canonical store stays metric)
   biometric: BiometricProfile | null;
   sessions: Session[];
+  routines: RoutineDef[];      // user-saved Gym templates (built-ins ship as data)
+  weeklyPlan: WeeklyPlan | null;  // recurring weekly routine; null = not set up yet
   leafScores: Record<LeafId, LeafScore>;
   muscleEstimates: Partial<Record<MuscleGroup, MuscleGroupEstimate>>;
   benchmarkResults: BenchmarkResult[];
