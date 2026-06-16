@@ -7,11 +7,14 @@
 // height-conditioned one:
 //   (a) for a target (sex, height) cohort, draw the representative bodyweight at that
 //       height from NHANES anthropometrics — `representativeBodyweightKg` (§5.4);
-//   (b) read the bodyweight-conditioned standard at that bodyweight to get the
-//       expected ("intermediate" / population-median) 1RM there;
-//   (c) the SPREAD at that height comes from allometric scaling: strength ∝ mass^(2/3),
-//       so a ±1SD swing in bodyweight-at-height maps to a (bw±sd / bw)^(2/3) swing in
-//       expected strength, combined with the intrinsic spread of the standard's tiers;
+//   (b) place ALL FIVE standard tiers (beginner…elite) at that bodyweight, anchor each
+//       to the population percentile it actually occupies (TIER_PCTL), and least-squares
+//       fit a Gaussian through those (load, percentile) points — so the curve MEDIAN is
+//       the average person, NOT the trained-intermediate tier (§5.3). This is the fix for
+//       the old scheme that pinned intermediate to the median and made ordinary lifts
+//       read far too low;
+//   (c) re-express the fitted mean & sd to the cohort's bodyweight allometrically
+//       (strength ∝ mass^(2/3)), plus the spread from bodyweight variation at that height;
 //   (d) apply an age-decline multiplier (~0.7%/yr after 34, steeper past 60).
 // The bridge is an INFERENCE and the lowest-confidence seed tier: every percentile it
 // produces is tagged seed-population / blended, low confidence, with the allometric
@@ -27,18 +30,20 @@
 //   squat   0.92 / 1.24 / 1.62 / 2.04 / 2.50
 //   deadlift 1.10 / 1.46 / 1.87 / 2.34 / 2.84
 //   ohp     0.43 / 0.60 / 0.80 / 1.03 / 1.29
-// FEMALE @ ~60kg:
-//   bench   0.28 / 0.48 / 0.78 / 1.13 / 1.53
-//   squat   0.48 / 0.78 / 1.17 / 1.62 / 2.13
-//   deadlift 0.62 / 0.95 / 1.38 / 1.88 / 2.43
-//   ohp     0.20 / 0.35 / 0.53 / 0.75 / 1.00
+// FEMALE (beginner anchor raised toward the real ExRx/StrengthLevel untrained ~0.5×BW,
+// elite trimmed to the real ~1.4×BW bench — the old 0.28→1.53 ladder was too wide and
+// implied sub-zero 1RMs in the lower tail):
+//   bench   0.50 / 0.62 / 0.78 / 1.10 / 1.45
+//   squat   0.70 / 0.90 / 1.17 / 1.55 / 2.00
+//   deadlift 0.85 / 1.05 / 1.38 / 1.80 / 2.30
+//   ohp     0.32 / 0.42 / 0.53 / 0.72 / 0.95
 // Sources: StrengthLevel strength-standards; ExRx Weightlifting Standards (cross-check);
 // NIH/Harvard Health (age decline). See seedSources.ts SYMMETRIC_STRENGTH / EXRX.
 
 import type { Cohort, CohortDist, LeafId, MuscleGroup } from "../../types";
 import { BLEND_K } from "../../constants";
 import { representativeBodyweightKg, bodyweightSdKg } from "./nhanesAnthro";
-import { makeDistId, sexKey, strengthAgeFactor, firstPartyWeight } from "./_shared";
+import { makeDistId, sexKey, strengthAgeFactor, firstPartyWeight, fitGaussianTiers, TIER_PCTL } from "./_shared";
 
 const ALLOMETRIC_B = 2 / 3; // §5.3 — strength ∝ mass^(2/3)
 
@@ -53,15 +58,18 @@ const STANDARDS: Record<"male" | "female", Record<LiftId, number[]>> = {
     ohp: [0.43, 0.6, 0.8, 1.03, 1.29],
   },
   female: {
-    bench: [0.28, 0.48, 0.78, 1.13, 1.53],
-    squat: [0.48, 0.78, 1.17, 1.62, 2.13],
-    deadlift: [0.62, 0.95, 1.38, 1.88, 2.43],
-    ohp: [0.2, 0.35, 0.53, 0.75, 1.0],
+    bench: [0.5, 0.62, 0.78, 1.1, 1.45],
+    squat: [0.7, 0.9, 1.17, 1.55, 2.0],
+    deadlift: [0.85, 1.05, 1.38, 1.8, 2.3],
+    ohp: [0.32, 0.42, 0.53, 0.72, 0.95],
   },
 };
 
-// Bodyweight at which each STANDARDS table was tabulated (the "reference" lifter).
-const STANDARD_BW: Record<"male" | "female", number> = { male: 90, female: 60 };
+// Reference bodyweight the tier fit is computed at. Set near the representative
+// weight of an average-height adult of each sex (NHANES) so the allometric rescale to
+// a typical user is ~identity — fixing the old 90kg anchor that over-discounted the
+// mean ~5% for normal-weight males (B2). Heavier/lighter cohorts still scale allometrically.
+const STANDARD_BW: Record<"male" | "female", number> = { male: 77, female: 61 };
 
 const LEAF_TO_LIFT: Record<string, LiftId> = {
   "strength.bench_1rm": "bench",
@@ -118,29 +126,22 @@ function bridgeLift(lift: LiftId, cohort: Cohort): { mean: number; sd: number } 
   // (a) representative bodyweight at this height (NHANES anthro).
   const bw = representativeBodyweightKg(cohort.sex, cohort.heightCm);
 
-  // (b) intermediate-tier 1RM at the REFERENCE bodyweight, then re-expressed to this
-  //     cohort's bodyweight via allometric scaling. The ×BW multiple is itself defined
-  //     at refBw; absolute load scales ~mass^(2/3), so:
-  //        load(bw) = multiple_at_refBw × refBw × (bw / refBw)^b
-  const intermediateMultiple = tiers[2];
-  const meanRef = intermediateMultiple * refBw;
-  let mean = meanRef * Math.pow(bw / refBw, ALLOMETRIC_B);
+  // (b) tier-anchored curve at the reference bodyweight: place each of the five tier
+  //     loads at its population percentile (TIER_PCTL) and least-squares fit a Gaussian
+  //     through them. The curve median is the AVERAGE person — not the intermediate tier.
+  const tierLoadsRef = tiers.map((m) => m * refBw);
+  const fit = fitGaussianTiers(tierLoadsRef, TIER_PCTL, false);
 
-  // (d) age decline.
-  mean *= strengthAgeFactor(cohort.ageYears);
+  // (c)+(d) re-express the fitted mean & sd to this cohort's bodyweight (allometric,
+  //     b=2/3) and apply the age-decline multiplier.
+  const ageF = strengthAgeFactor(cohort.ageYears);
+  const scale = Math.pow(bw / refBw, ALLOMETRIC_B) * ageF;
+  const mean = fit.mean * scale;
+  const tierSd = fit.sd * scale;
 
-  // (c) spread: combine (i) the intrinsic tier spread of the standard — distance from
-  //     intermediate to elite is roughly +2SD of the trained-lifter population — with
-  //     (ii) the allometric spread from bodyweight variation at this height.
-  const eliteMultiple = tiers[4];
-  const noviceMultiple = tiers[1];
-  // half the novice→elite multiple range ≈ ~2SD; so 1SD ≈ (elite-novice)/4 of refBw, scaled.
-  const tierSdRef = ((eliteMultiple - noviceMultiple) / 4) * refBw;
-  let tierSd = tierSdRef * Math.pow(bw / refBw, ALLOMETRIC_B) * strengthAgeFactor(cohort.ageYears);
-
-  // allometric bodyweight spread: how much expected strength moves for ±1SD of bw.
+  // add the allometric spread from bodyweight variation within the height band.
   const bwSd = bodyweightSdKg(cohort.sex, cohort.heightCm);
-  const meanPlus = meanRef * Math.pow((bw + bwSd) / refBw, ALLOMETRIC_B) * strengthAgeFactor(cohort.ageYears);
+  const meanPlus = fit.mean * Math.pow((bw + bwSd) / refBw, ALLOMETRIC_B) * ageF;
   const allometricSd = Math.abs(meanPlus - mean);
 
   // combine independent spread sources in quadrature.
@@ -152,6 +153,8 @@ const ASSUMPTIONS = (cohort: Cohort): string[] => {
   const a = [
     "Height-conditioned via the bridge model (§5.3): bodyweight-conditioned strength " +
       "standards re-expressed to a height cohort using NHANES anthropometric weight-at-height.",
+    "Curve fit through the full tier ladder (beginner→elite) at population percentiles, so " +
+      "the median is an average person — not the trained-intermediate tier.",
     `Allometric scaling exponent b=${ALLOMETRIC_B.toFixed(3)} (strength ∝ mass^(2/3)).`,
     "Source standards are bodyweight-based (StrengthLevel / ExRx) and are used ONLY through " +
       "the bridge — never directly as the normalizer (Decision #5).",

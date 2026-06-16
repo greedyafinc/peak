@@ -1,9 +1,12 @@
 // Peak — aerobic distributions: 5K, 1-mile, VO2max, HR-recovery (§2.2).
 //
 // Running times are conditioned on sex + age (WMA age-grading concept, §2.2):
-// lowerIsBetter=true. Means are the "intermediate" serious-recreational time; SD set
-// so the elite column sits ~−2SD and the beginner column ~+1.5SD. VO2max cohorts model
-// cleanly as per-(sex,age) Gaussians from the ACSM/Cooper percentile table.
+// lowerIsBetter=true. Each running curve is TIER-ANCHORED (§5.3): the Running Level
+// "Intermediate" time is just one tier on a five-tier ladder, and the cohort curve is
+// fit through all five tiers at their population percentiles — so the median is a typical
+// recreational runner, not the trained-intermediate runner (which read far too fast and
+// buried ordinary times near the 1st percentile). VO2max cohorts model cleanly as
+// per-(sex,age) Gaussians from the ACSM/Cooper percentile table.
 //
 // Sources:
 //   5K / mile: Running Level regression on large race datasets; RunRepeat cross-check.
@@ -13,7 +16,18 @@
 
 import type { Cohort, CohortDist, LeafId } from "../../types";
 import { BLEND_K } from "../../constants";
-import { interp, makeDistId, sexKey, firstPartyWeight } from "./_shared";
+import { interp, makeDistId, sexKey, firstPartyWeight, fitGaussianTiers, TIER_PCTL } from "./_shared";
+
+// Running capability tiers as ratios of the Intermediate finishing time (the base
+// tables below): slower tiers are bigger ratios. The cohort curve is fit through these
+// at TIER_PCTL so its median is the average recreational runner, not the trained
+// intermediate (§5.3). Spread (~18% CV) widens the thin old tail.
+const RUN_TIER_RATIO = [1.45, 1.18, 1.0, 0.88, 0.78]; // beginner..elite
+
+/** Tier-anchored Gaussian (seconds) for a running event from its Intermediate-tier time. */
+function runDist(intermediateSec: number): { mean: number; sd: number } {
+  return fitGaussianTiers(RUN_TIER_RATIO.map((r) => intermediateSec * r), TIER_PCTL, true);
+}
 
 // ── 5K finishing time (seconds), intermediate-tier mean by sex × age ────────────
 // Running Level "Intermediate" column.
@@ -98,10 +112,10 @@ const ROAD_AGE_MULT: Record<"male" | "female", { x: number; y: number }[]> = {
   male: [{ x: 25, y: 1.0 }, { x: 35, y: 1.0 }, { x: 45, y: 1.053 }, { x: 55, y: 1.137 }, { x: 65, y: 1.258 }],
   female: [{ x: 25, y: 1.0 }, { x: 35, y: 1.0 }, { x: 45, y: 1.027 }, { x: 55, y: 1.119 }, { x: 65, y: 1.225 }],
 };
-const ROAD_META: Record<string, { cv: number; basis: number; ceil: string }> = {
-  "aerobic.10k": { cv: 0.15, basis: 0.85, ceil: "10K" },
-  "aerobic.half_marathon": { cv: 0.15, basis: 0.82, ceil: "half marathon" },
-  "aerobic.marathon": { cv: 0.16, basis: 0.8, ceil: "marathon" },
+const ROAD_META: Record<string, { basis: number; ceil: string }> = {
+  "aerobic.10k": { basis: 0.85, ceil: "10K" },
+  "aerobic.half_marathon": { basis: 0.82, ceil: "half marathon" },
+  "aerobic.marathon": { basis: 0.8, ceil: "marathon" },
 };
 
 // ── Triathlon median finisher times (seconds) by sex × distance ─────────────────
@@ -134,36 +148,36 @@ export function aerobicCohortDist(leafId: LeafId, cohort: Cohort): CohortDist | 
   };
 
   if (leafId === "aerobic.5k") {
-    const mean = interp(age, FIVEK_MEAN[sk]);
+    const { mean, sd } = runDist(interp(age, FIVEK_MEAN[sk]));
     return {
       ...base,
       mean,
-      sd: mean * 0.14, // ~14% CV puts elite ~−2SD, beginner ~+1.5SD
+      sd,
       lowerIsBetter: true,
       seedSources: ["WMA_AGE_GRADED", "MILITARY_FITNESS"],
       confidenceBasis: 0.9,
       dataSourceLabel: "Age-graded 5K running norms (WMA-style), real race-result distributions.",
       assumptions: [
         "Running time conditioned on sex + age via WMA age-grading concept (§2.2).",
-        "Gaussian on raw seconds (mildly right-skewed in reality); elite ≈ −2SD anchor.",
+        "Curve fit through the five running tiers (beginner→elite) at population percentiles; median = typical recreational runner.",
         ...sexNote,
       ],
     };
   }
 
   if (leafId === "aerobic.mile") {
-    const mean = interp(age, MILE_MEAN[sk]);
+    const { mean, sd } = runDist(interp(age, MILE_MEAN[sk]));
     return {
       ...base,
       mean,
-      sd: mean * 0.15,
+      sd,
       lowerIsBetter: true,
       seedSources: ["WMA_AGE_GRADED", "MILITARY_FITNESS"],
       confidenceBasis: 0.88,
       dataSourceLabel: "Age-graded 1-mile running norms (WMA-style), real race-result distributions.",
       assumptions: [
         "Running time conditioned on sex + age via WMA age-grading concept (§2.2).",
-        "Gaussian on raw seconds; world-record floor far below the cohort mean.",
+        "Curve fit through the five running tiers (beginner→elite) at population percentiles; median = typical recreational runner.",
         ...sexNote,
       ],
     };
@@ -191,19 +205,18 @@ export function aerobicCohortDist(leafId: LeafId, cohort: Cohort): CohortDist | 
   // Longer road races — same age-graded running family as 5K/mile.
   if (ROAD_EVENT_BASE[sk][leafId] != null) {
     const meta = ROAD_META[leafId];
-    const mean = ROAD_EVENT_BASE[sk][leafId] * interp(age, ROAD_AGE_MULT[sk]);
+    const { mean, sd } = runDist(ROAD_EVENT_BASE[sk][leafId] * interp(age, ROAD_AGE_MULT[sk]));
     return {
       ...base,
       mean,
-      sd: mean * meta.cv,
+      sd,
       lowerIsBetter: true,
       seedSources: ["RUNNING_LEVEL", "WMA_AGE_GRADED"],
       confidenceBasis: meta.basis,
       dataSourceLabel: `Age-graded ${meta.ceil} finishing-time norms — recreational race-result distributions (WMA-style age curve).`,
       assumptions: [
         `${meta.ceil} time conditioned on sex + age via the WMA age-grading concept (§2.2).`,
-        "Intermediate-tier recreational median at the 25–35 base, age-scaled to match the 5K/mile curve.",
-        "Gaussian on raw seconds (mildly right-skewed in reality); elite fields sit far below this median.",
+        "Curve fit through the five running tiers at population percentiles; median ≈ a typical age-group finisher.",
         ...sexNote,
       ],
     };

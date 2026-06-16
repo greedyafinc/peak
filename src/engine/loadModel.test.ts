@@ -81,10 +81,12 @@ test("75 lb/hand dumbbell bench is NOT a bottom-percentile chest", () => {
   const asOf = "2026-06-15T19:00:00.000Z";
   const est = inferMuscleStrength([sessionWith("dumbbell-bench-press", 34, 8)], build, asOf);
   const chest = est.chest?.percentileRaw ?? null;
-  // The bug scored this ~0.005 (≈0.5th pct). The barbell-equivalent fix lands it ~0.5.
+  // The bug scored this ~0.005 (≈0.5th pct). With the per-arm fix + tier-anchored
+  // calibration it lands ~0.75 ("proficient") — a 150 lb-of-dumbbells press is a
+  // genuinely above-average chest.
   expect(chest).not.toBeNull();
-  expect(chest!).toBeGreaterThan(0.3);
-  expect(chest!).toBeLessThan(0.75);
+  expect(chest!).toBeGreaterThan(0.5);
+  expect(chest!).toBeLessThan(0.9);
 });
 
 test("an equivalent barbell bench and dumbbell bench land within a tier of each other", () => {
