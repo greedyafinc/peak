@@ -7,6 +7,10 @@ import { Body } from "./screens/Body";
 import { Log } from "./screens/Log";
 import { Improve } from "./screens/Improve";
 import { LogSheet, BenchmarkSheet, GoalSheet } from "./components/Sheets";
+import { StartSheet } from "./components/SessionStart";
+import { RoutineBuilder } from "./components/RoutineBuilder";
+import { ActiveSession, MiniSessionBar } from "./components/ActiveSession";
+import { ExerciseDetail } from "./components/ExerciseDetail";
 
 function Screens() {
   const { tab, data } = usePeak();
@@ -33,7 +37,12 @@ function Shell() {
           <LogSheet />
           <BenchmarkSheet />
           <GoalSheet />
+          <StartSheet />
+          <RoutineBuilder />
+          <MiniSessionBar />
           <BottomNav />
+          <ActiveSession />
+          <ExerciseDetail />
         </div>
       </div>
     </div>

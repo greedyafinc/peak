@@ -2,10 +2,14 @@
 // screens build on so the beta stays visually coherent. Dark performance-tech
 // theme, inline styles, Space Grotesk + JetBrains Mono.
 
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { C, mono } from "../theme";
 import { TIER_LABEL, TIER_COLOR, TIER_BANDS } from "../constants";
-import type { TierId, CurveProvenance } from "../types";
+import type { TierId, CurveProvenance, UnitSystem } from "../types";
+import { usePeak } from "../store";
+import { clockToSec, secToClock } from "../units";
+
+const pad2 = (n: number): string => String(Math.floor(n)).padStart(2, "0");
 
 /** Band a percentile [0,1] into its tier (half-open, lower-inclusive; §2.3). */
 export function tierFromPct(p: number): TierId {
@@ -218,6 +222,78 @@ export function Chip({ active, color, onClick, children }: { active?: boolean; c
   );
 }
 
+// ── Duration input (clock-shaped: m:ss or h:mm:ss → canonical seconds) ────────
+// Inputs are NEVER a raw-seconds box. Two or three small numeric segments with
+// ":" separators; `onChange` always emits total seconds. Local strings are kept
+// while editing so typing never round-trips through a lossy reparse.
+export function DurationInput({
+  valueSec,
+  onChange,
+  showHours = false,
+}: {
+  valueSec: number | null;
+  onChange: (totalSec: number | null) => void;
+  showHours?: boolean;
+}) {
+  const init = valueSec != null ? secToClock(valueSec) : null;
+  const [h, setH] = useState(init && init.h ? String(init.h) : "");
+  const [m, setM] = useState(init ? String(init.m) : "");
+  const [s, setS] = useState(init ? pad2(init.s) : "");
+
+  const emit = (hh: string, mm: string, ss: string) => {
+    if (hh === "" && mm === "" && ss === "") return onChange(null);
+    onChange(clockToSec(Number(hh) || 0, Number(mm) || 0, Number(ss) || 0));
+  };
+
+  const seg: CSSProperties = {
+    ...inputStyle,
+    fontFamily: mono,
+    textAlign: "center",
+    padding: "10px 6px",
+    MozAppearance: "textfield" as CSSProperties["MozAppearance"],
+  };
+  const colon = (
+    <span style={{ color: C.muted, fontFamily: mono, fontSize: 18, paddingBottom: 2 }}>:</span>
+  );
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+      {showHours && (
+        <>
+          <div style={{ flex: 1 }}>
+            <input style={seg} type="number" inputMode="numeric" min={0} placeholder="0"
+              value={h} onChange={(e) => { setH(e.target.value); emit(e.target.value, m, s); }} aria-label="hours" />
+            <div style={segLabel}>hr</div>
+          </div>
+          {colon}
+        </>
+      )}
+      <div style={{ flex: 1 }}>
+        <input style={seg} type="number" inputMode="numeric" min={0} placeholder="0"
+          value={m} onChange={(e) => { setM(e.target.value); emit(h, e.target.value, s); }} aria-label="minutes" />
+        <div style={segLabel}>min</div>
+      </div>
+      {colon}
+      <div style={{ flex: 1 }}>
+        <input style={seg} type="number" inputMode="numeric" min={0} max={59} placeholder="00"
+          value={s}
+          onChange={(e) => { setS(e.target.value); emit(h, m, e.target.value); }}
+          onBlur={() => { if (s !== "") setS(pad2(Number(s) || 0)); }}
+          aria-label="seconds" />
+        <div style={segLabel}>sec</div>
+      </div>
+    </div>
+  );
+}
+const segLabel: CSSProperties = {
+  fontSize: 9,
+  color: C.muted,
+  textTransform: "uppercase",
+  letterSpacing: "0.5px",
+  textAlign: "center",
+  marginTop: 4,
+};
+
 // ── Segmented toggle (unit switch, mode picker, …) ────────────────────────────
 export function SegToggle<T extends string>({
   options,
@@ -275,6 +351,57 @@ export function SegToggle<T extends string>({
         );
       })}
     </div>
+  );
+}
+
+// ── Subtle unit toggle (per-field, but flips ONE global setting) ──────────────
+// Two tiny labels (e.g. kg · lb); tapping either sets PeakData.unitSystem, so a
+// toggle on any field instantly re-units every input and display in the app.
+const UNIT_PAIR: Record<"weight" | "distance" | "length" | "height", [string, string]> = {
+  weight: ["kg", "lb"],
+  distance: ["km", "mi"],
+  length: ["cm", "in"],
+  height: ["cm", "ft/in"],
+};
+
+export function UnitToggle({ kind, style }: { kind: keyof typeof UNIT_PAIR; style?: CSSProperties }) {
+  const s = usePeak();
+  const sys = s.data.unitSystem;
+  const [metricLabel, imperialLabel] = UNIT_PAIR[kind];
+  const opts: { label: string; value: UnitSystem }[] = [
+    { label: metricLabel, value: "metric" },
+    { label: imperialLabel, value: "imperial" },
+  ];
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 1, ...style }}>
+      {opts.map((o, i) => {
+        const on = sys === o.value;
+        return (
+          <span key={o.value} style={{ display: "inline-flex", alignItems: "center" }}>
+            {i === 1 && <span style={{ color: C.line2, fontSize: 10, margin: "0 1px" }}>·</span>}
+            <button
+              type="button"
+              aria-pressed={on}
+              onClick={() => { if (!on) s.setUnitSystem(o.value); }}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "2px 3px",
+                fontFamily: mono,
+                fontSize: 10.5,
+                fontWeight: 700,
+                letterSpacing: "0.3px",
+                color: on ? C.accent : C.muted2,
+                transition: "color .15s",
+              }}
+            >
+              {o.label}
+            </button>
+          </span>
+        );
+      })}
+    </span>
   );
 }
 

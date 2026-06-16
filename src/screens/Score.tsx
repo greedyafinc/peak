@@ -15,6 +15,7 @@ import {
 } from "../data/capabilityTree";
 import { BENCHMARK_BY_LEAF } from "../data/benchmarks";
 import { Radar } from "../viz/Radar";
+import { fmtHeight } from "../units";
 import { C, mono, sans } from "../theme";
 import {
   Card,
@@ -62,7 +63,7 @@ export function Score() {
 
   const build = biometric?.build;
   const cohortLabel = build
-    ? `vs ${build.sex === "unspecified" ? "your build" : build.sex + "s"}, ${Math.round(build.heightCm)}cm, ${build.ageYears}`
+    ? `vs ${build.sex === "unspecified" ? "your build" : build.sex + "s"}, ${fmtHeight(build.heightCm, s.data.unitSystem)}, ${build.ageYears}`
     : null;
 
   // Performed dimensions only (consistency is not in `dimensions`, but guard anyway).
@@ -221,7 +222,7 @@ function HeadlineHero({
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, color: C.mint }}>{momentum}%</span>
           <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.orange }}>
-            🔥 {consistency.currentStreakDays}d
+            {consistency.currentStreakDays}d streak
           </span>
         </div>
       </div>
@@ -335,7 +336,7 @@ function PlacementHero({
           <div style={{ fontSize: 11.5, color: C.muted }}>Momentum · not capability</div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, color: C.mint }}>{momentum}%</span>
-            <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.orange }}>🔥 {consistency.currentStreakDays}d</span>
+            <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.orange }}>{consistency.currentStreakDays}d streak</span>
           </div>
         </div>
       ) : null}

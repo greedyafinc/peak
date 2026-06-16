@@ -86,6 +86,36 @@ const VO2_SD: Record<"male" | "female", { x: number; y: number }[]> = {
   ],
 };
 
+// ── Longer road races: 10K / half / marathon (seconds) ──────────────────────────
+// "Intermediate"-tier recreational finishing time at the 25–35 base, then age-scaled
+// by the WMA-style curve (mirrors the 5K shape so the running ladder stays coherent).
+const ROAD_EVENT_BASE: Record<"male" | "female", Record<string, number>> = {
+  male: { "aerobic.10k": 2800, "aerobic.half_marathon": 6300, "aerobic.marathon": 13200 },
+  female: { "aerobic.10k": 3250, "aerobic.half_marathon": 7320, "aerobic.marathon": 15300 },
+};
+// Age multiplier vs the 25–35 base (1.0), matching the 5K/mile age progression.
+const ROAD_AGE_MULT: Record<"male" | "female", { x: number; y: number }[]> = {
+  male: [{ x: 25, y: 1.0 }, { x: 35, y: 1.0 }, { x: 45, y: 1.053 }, { x: 55, y: 1.137 }, { x: 65, y: 1.258 }],
+  female: [{ x: 25, y: 1.0 }, { x: 35, y: 1.0 }, { x: 45, y: 1.027 }, { x: 55, y: 1.119 }, { x: 65, y: 1.225 }],
+};
+const ROAD_META: Record<string, { cv: number; basis: number; ceil: string }> = {
+  "aerobic.10k": { cv: 0.15, basis: 0.85, ceil: "10K" },
+  "aerobic.half_marathon": { cv: 0.15, basis: 0.82, ceil: "half marathon" },
+  "aerobic.marathon": { cv: 0.16, basis: 0.8, ceil: "marathon" },
+};
+
+// ── Triathlon median finisher times (seconds) by sex × distance ─────────────────
+const TRI_BASE: Record<"male" | "female", Record<string, number>> = {
+  male: { "aerobic.tri_sprint": 5100, "aerobic.tri_olympic": 10200, "aerobic.tri_70_3": 21600, "aerobic.tri_ironman": 45000 },
+  female: { "aerobic.tri_sprint": 5580, "aerobic.tri_olympic": 11280, "aerobic.tri_70_3": 23700, "aerobic.tri_ironman": 48600 },
+};
+const TRI_LABEL: Record<string, string> = {
+  "aerobic.tri_sprint": "sprint-distance triathlon",
+  "aerobic.tri_olympic": "Olympic-distance triathlon",
+  "aerobic.tri_70_3": "half-Ironman (70.3)",
+  "aerobic.tri_ironman": "Ironman (140.6)",
+};
+
 export function aerobicCohortDist(leafId: LeafId, cohort: Cohort): CohortDist | null {
   const sk = sexKey(cohort.sex);
   const K = BLEND_K.aerobic;
@@ -153,6 +183,47 @@ export function aerobicCohortDist(leafId: LeafId, cohort: Cohort): CohortDist | 
       assumptions: [
         "Per-(sex, age) Gaussian fit to the ACSM/Cooper VO₂max percentile table.",
         "Mass-relative metric (ml/kg/min); the §3.6.1 healthy-floor guard applies below the essential-fat floor.",
+        ...sexNote,
+      ],
+    };
+  }
+
+  // Longer road races — same age-graded running family as 5K/mile.
+  if (ROAD_EVENT_BASE[sk][leafId] != null) {
+    const meta = ROAD_META[leafId];
+    const mean = ROAD_EVENT_BASE[sk][leafId] * interp(age, ROAD_AGE_MULT[sk]);
+    return {
+      ...base,
+      mean,
+      sd: mean * meta.cv,
+      lowerIsBetter: true,
+      seedSources: ["RUNNING_LEVEL", "WMA_AGE_GRADED"],
+      confidenceBasis: meta.basis,
+      dataSourceLabel: `Age-graded ${meta.ceil} finishing-time norms — recreational race-result distributions (WMA-style age curve).`,
+      assumptions: [
+        `${meta.ceil} time conditioned on sex + age via the WMA age-grading concept (§2.2).`,
+        "Intermediate-tier recreational median at the 25–35 base, age-scaled to match the 5K/mile curve.",
+        "Gaussian on raw seconds (mildly right-skewed in reality); elite fields sit far below this median.",
+        ...sexNote,
+      ],
+    };
+  }
+
+  // Triathlon distances — thin, self-selected finisher fields → low-confidence seed.
+  if (TRI_BASE[sk][leafId] != null) {
+    const mean = TRI_BASE[sk][leafId] * interp(age, ROAD_AGE_MULT[sk]);
+    return {
+      ...base,
+      mean,
+      sd: mean * 0.17,
+      lowerIsBetter: true,
+      seedSources: ["TRIATHLON_NORMS"],
+      confidenceBasis: 0.6,
+      dataSourceLabel: `Median age-group finisher times for the ${TRI_LABEL[leafId]}, public results aggregates.`,
+      assumptions: [
+        "Multisport finishing time conditioned on sex + age; median age-group finisher anchor.",
+        "Self-selected finisher population (not the general public) and wide spread → low-confidence seed.",
+        "Course, conditions, and transitions vary widely; treated as a feat benchmark, not a precise capability.",
         ...sexNote,
       ],
     };

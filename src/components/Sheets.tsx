@@ -1,17 +1,23 @@
 // Peak — bottom sheets: the real per-set logger (§6.4), the benchmark capture,
 // and the goal builder. Each gated on its store flag, each using the shared Sheet.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePeak, type LogEntryInput, type LogSetInput } from "../store";
 import { C, mono } from "../theme";
 import {
-  Sheet, Field, Chip, PrimaryButton, GhostButton, inputStyle,
+  Sheet, Field, Chip, PrimaryButton, GhostButton, UnitToggle, DurationInput, inputStyle,
 } from "../components/ui";
 import { EXERCISES, EXERCISE_BY_ID } from "../data/exercises";
-import { BENCHMARK_BY_LEAF } from "../data/benchmarks";
+import { isPerArm } from "../data/exerciseCatalog";
+import { BENCHMARK_BY_LEAF, standardDistanceKm, eventNeedsHours } from "../data/benchmarks";
+import { variantsForLeaf } from "../data/benchmarkVariants";
 import { LEAF_BY_ID, DIMENSIONS } from "../data/capabilityTree";
 import type {
   WorkoutType, DimensionId, RawMeasurement, Unit, LeafId, Quantity,
 } from "../types";
+import {
+  distanceToKm, distanceUnit, kgToDisplay, lengthToMeters, lengthUnit,
+  paceLabel, weightToKg, weightUnit,
+} from "../units";
 
 const WORKOUT_TYPES: WorkoutType[] = ["Gym", "Cardio", "Sport", "Mobility"];
 
@@ -45,6 +51,7 @@ type DraftEntry = { exerciseId: string; sets: DraftSet[] };
 
 export function LogSheet() {
   const s = usePeak();
+  const sys = s.data.unitSystem;
   const [type, setType] = useState<WorkoutType>("Gym");
   const [title, setTitle] = useState("");
   const [entries, setEntries] = useState<DraftEntry[]>([]);
@@ -54,14 +61,14 @@ export function LogSheet() {
   const [notes, setNotes] = useState("");
   // cardio
   const [cDist, setCDist] = useState("");
-  const [cDur, setCDur] = useState("");
+  const [cDurSec, setCDurSec] = useState<number | null>(null);
   const [cHr, setCHr] = useState("");
 
   const isCardio = type === "Cardio";
 
   const reset = () => {
     setType("Gym"); setTitle(""); setEntries([]); setPicking(false); setSearch("");
-    setDurationMin(""); setNotes(""); setCDist(""); setCDur(""); setCHr("");
+    setDurationMin(""); setNotes(""); setCDist(""); setCDurSec(null); setCHr("");
   };
   const close = () => { reset(); s.set({ logOpen: false }); };
 
@@ -92,15 +99,17 @@ export function LogSheet() {
       : e));
 
   const canSave = isCardio
-    ? num(cDur) != null && num(cDur)! > 0
+    ? cDurSec != null && cDurSec > 0
     : entries.some((e) => e.sets.some((st) => num(st.reps) != null && num(st.reps)! > 0));
 
   const save = () => {
     if (isCardio) {
+      const d = num(cDist);
       s.logSession({
         type, title: title || undefined,
-        cardio: [{ distanceKm: num(cDist) ?? null, durationMin: num(cDur) ?? 0, avgHr: num(cHr) ?? null }],
-        durationMin: num(durationMin), notes: notes || undefined,
+        cardio: [{ distanceKm: d != null ? distanceToKm(d, sys) : null, durationMin: (cDurSec ?? 0) / 60, avgHr: num(cHr) ?? null }],
+        durationMin: durationMin !== "" ? num(durationMin) : (cDurSec != null ? Math.round(cDurSec / 60) : undefined),
+        notes: notes || undefined,
       });
     } else {
       const built: LogEntryInput[] = entries
@@ -108,7 +117,10 @@ export function LogSheet() {
           exerciseId: e.exerciseId,
           sets: e.sets
             .filter((st) => num(st.reps) != null && num(st.reps)! > 0)
-            .map((st): LogSetInput => ({ weightKg: num(st.weight) ?? null, reps: num(st.reps)!, rpe: num(st.rpe) ?? null })),
+            .map((st): LogSetInput => {
+              const w = num(st.weight);
+              return { weightKg: w != null ? weightToKg(w, sys) : null, reps: num(st.reps)!, rpe: num(st.rpe) ?? null };
+            }),
         }))
         .filter((e) => e.sets.length > 0);
       s.logSession({ type, title: title || undefined, entries: built, durationMin: num(durationMin), notes: notes || undefined });
@@ -133,26 +145,48 @@ export function LogSheet() {
       </Field>
 
       {isCardio ? (
-        <div style={{ display: "flex", gap: 10 }}>
-          <div style={{ flex: 1 }}><Field label="Distance (km)"><NumInput value={cDist} onChange={setCDist} placeholder="5" step="0.1" /></Field></div>
-          <div style={{ flex: 1 }}><Field label="Duration (min)"><NumInput value={cDur} onChange={setCDur} placeholder="28" /></Field></div>
-          <div style={{ flex: 1 }}><Field label="Avg HR"><NumInput value={cHr} onChange={setCHr} placeholder="155" /></Field></div>
-        </div>
+        <>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <Field label={`Distance (${distanceUnit(sys)})`}>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}><UnitToggle kind="distance" /></div>
+                <NumInput value={cDist} onChange={setCDist} placeholder={sys === "imperial" ? "3.1" : "5"} step="0.1" />
+              </Field>
+            </div>
+            <div style={{ flex: 1 }}><Field label="Avg HR"><NumInput value={cHr} onChange={setCHr} placeholder="155" /></Field></div>
+          </div>
+          <Field
+            label="Duration"
+            hint={
+              cDurSec && num(cDist)
+                ? `Pace · ${paceLabel(distanceToKm(num(cDist)!, sys), cDurSec, sys)}`
+                : undefined
+            }
+          >
+            <DurationInput valueSec={cDurSec} onChange={setCDurSec} showHours />
+          </Field>
+        </>
       ) : (
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 4 }}>
             {entries.map((entry, ei) => {
               const ex = EXERCISE_BY_ID[entry.exerciseId];
+              const perArm = ex ? isPerArm(ex) : false;
               return (
                 <div key={ei} style={{ background: C.inner, border: `1px solid ${C.line2}`, borderRadius: 14, padding: 13 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{ex?.name ?? entry.exerciseId}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{ex?.name ?? entry.exerciseId}</span>
+                      {perArm && (
+                        <span style={{ fontSize: 8.5, fontWeight: 700, color: C.blue, background: `${C.blue}1f`, padding: "1px 5px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" }}>Per arm</span>
+                      )}
+                    </span>
                     <button onClick={() => removeEntry(ei)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, lineHeight: 1 }} aria-label="Remove exercise">×</button>
                   </div>
                   {/* set header */}
-                  <div style={{ display: "flex", gap: 8, marginBottom: 6, fontSize: 9.5, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 6, fontSize: 9.5, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px", alignItems: "center" }}>
                     <span style={{ width: 18 }}>#</span>
-                    <span style={{ flex: 1 }}>kg</span>
+                    <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 3 }}><UnitToggle kind="weight" />{perArm && <span style={{ color: C.blue }}>/ arm</span>}</span>
                     <span style={{ flex: 1 }}>reps</span>
                     <span style={{ flex: 1 }}>rpe</span>
                     <span style={{ width: 24 }} />
@@ -217,84 +251,108 @@ export function LogSheet() {
 // ─────────────────────────────────────────────────────────────────────────────
 export function BenchmarkSheet() {
   const s = usePeak();
+  const sys = s.data.unitSystem;
   const leafId = s.benchLeaf;
   const proto = leafId ? BENCHMARK_BY_LEAF[leafId] : undefined;
-  // fields keyed by RawMeasurement need: a primary value + a few optional helpers.
-  const [a, setA] = useState(""); // primary (load / reps / duration sec / distance / angle / vo2 / height)
-  const [b, setB] = useState(""); // secondary (reps for max_load; duration sec for time/sprint)
+  const variants = leafId ? variantsForLeaf(leafId) : [];
+
+  // One capture slot per shape: a load+reps (with a variant), a clock, or a value.
+  const [variantId, setVariantId] = useState("");
+  const [load, setLoad] = useState("");
+  const [reps, setReps] = useState("");
+  const [durSec, setDurSec] = useState<number | null>(null);
+  const [val, setVal] = useState(""); // max reps / vo2 / length / rom / distance (m)
+
+  const resetFields = () => { setVariantId(""); setLoad(""); setReps(""); setDurSec(null); setVal(""); };
+
+  // Whenever the targeted benchmark changes, clear the form.
+  useEffect(() => { resetFields(); }, [leafId]);
 
   if (!s.benchOpen || !proto || !leafId) return null;
 
-  const close = () => { setA(""); setB(""); s.set({ benchOpen: false, benchLeaf: null }); };
+  const close = () => { resetFields(); s.set({ benchOpen: false, benchLeaf: null }); };
   const leafLabel = LEAF_BY_ID[leafId]?.label ?? leafId;
-  const unit: Unit = proto.units;
+  const imp = sys === "imperial";
+  const activeVariant = variants.find((v) => v.id === variantId) ?? variants[0];
+  const perHand = activeVariant?.entry === "perHand";
 
-  // distance unit for time_for_distance — from the capture schema (km / mi / m)
-  const distUnit = (proto.rawCaptureSchema.find((f) => f.name === "distance")?.unit ?? "km") as Unit;
-  const defaultDist = proto.rawCaptureSchema.find((f) => f.name === "distance");
-
+  const q = (value: number, u: Unit): Quantity => ({ value, unit: u });
   const build = (): RawMeasurement | null => {
-    const av = num(a);
-    const bv = num(b);
-    const q = (value: number, u: Unit): Quantity => ({ value, unit: u });
     switch (proto.measure) {
-      case "max_load":
-        if (av == null) return null;
-        return { kind: "max_load", load: q(av, "kg"), reps: bv != null && bv > 0 ? bv : 1 };
-      case "rep_max":
-        if (av == null) return null;
-        return { kind: "rep_max", reps: av };
-      case "hold_duration":
-        if (av == null) return null;
-        return { kind: "hold_duration", duration: q(av, "sec") };
-      case "balance_hold":
-        if (av == null) return null;
-        return { kind: "balance_hold", duration: q(av, "sec") };
-      case "time_for_distance": {
-        if (bv == null) return null;
-        const dist = av != null ? av : (defaultDist ? defaultLeafDistance(leafId) : 0);
-        return { kind: "time_for_distance", distance: q(dist, distUnit), duration: q(bv, "sec") };
+      case "max_load": {
+        const L = num(load);
+        if (L == null || L <= 0) return null;
+        const total = perHand ? L * 2 : L;        // dumbbell entry = one bell × 2
+        const r = num(reps);
+        return {
+          kind: "max_load",
+          load: q(weightToKg(total, sys), "kg"),
+          reps: r != null && r > 0 ? Math.round(r) : 1,
+          variantId: activeVariant?.id,
+          equipment: activeVariant?.equipment,
+        };
       }
+      case "rep_max": {
+        const v = num(val);
+        return v != null && v >= 0 ? { kind: "rep_max", reps: Math.round(v) } : null;
+      }
+      case "hold_duration":
+        return durSec && durSec > 0 ? { kind: "hold_duration", duration: q(durSec, "sec") } : null;
+      case "balance_hold":
+        return durSec && durSec > 0 ? { kind: "balance_hold", duration: q(durSec, "sec") } : null;
+      case "time_for_distance":
+        return durSec && durSec > 0
+          ? { kind: "time_for_distance", distance: q(standardDistanceKm(leafId), "km"), duration: q(durSec, "sec") }
+          : null;
       case "sprint_time": {
-        if (bv == null) return null;
-        const dist = av != null ? av : 400;
-        return { kind: "sprint_time", distance: q(dist, distUnit), duration: q(bv, "sec") };
+        const d = leafId === "anaerobic.sprint_repeats" ? 40 : 400;
+        return durSec && durSec > 0 ? { kind: "sprint_time", distance: q(d, "m"), duration: q(durSec, "sec") } : null;
       }
       case "distance_in_time": {
-        if (av == null) return null;
-        return { kind: "distance_in_time", distance: q(av, distUnit), duration: q(bv ?? 60, "sec") };
+        const d = num(val);
+        return d != null && d > 0 ? { kind: "distance_in_time", distance: q(d, "m"), duration: q(60, "sec") } : null;
       }
-      case "vo2_proxy":
-        if (av == null) return null;
-        return { kind: "vo2_proxy", vo2: q(av, "ml/kg/min") };
-      case "jump_height":
-        if (av == null) return null;
-        return { kind: "jump_height", height: q(av, "m") };
-      case "throw_distance":
-        if (av == null) return null;
-        return { kind: "throw_distance", distance: q(av, "m") };
-      case "reach_distance":
-        if (av == null) return null;
-        return { kind: "reach_distance", distance: q(av, "m") };
-      case "rom":
-        if (av == null) return null;
-        return { kind: "rom", angle: q(av, "degree") };
+      case "vo2_proxy": {
+        const v = num(val);
+        return v != null && v > 0 ? { kind: "vo2_proxy", vo2: q(v, "ml/kg/min") } : null;
+      }
+      case "jump_height": {
+        const v = num(val);
+        return v != null && v > 0 ? { kind: "jump_height", height: q(lengthToMeters(v, sys), "m") } : null;
+      }
+      case "throw_distance": {
+        const v = num(val);
+        return v != null && v > 0 ? { kind: "throw_distance", distance: q(lengthToMeters(v, sys), "m") } : null;
+      }
+      case "reach_distance": {
+        const v = num(val);
+        return v != null ? { kind: "reach_distance", distance: q(lengthToMeters(v, sys), "m") } : null;
+      }
+      case "rom": {
+        const v = num(val);
+        return v != null && v > 0 ? { kind: "rom", angle: q(v, "degree") } : null;
+      }
       default:
         return null;
     }
   };
 
-  const fields = fieldSpec(proto.measure, unit, distUnit);
   const raw = build();
+  const onSave = () => { if (raw) { s.addBenchmark(leafId, raw); resetFields(); } };
+
+  // Live standard-equivalent preview for a converted variant (e.g. dumbbell bench).
+  let equivNote: string | null = null;
+  if (raw?.kind === "max_load" && activeVariant && !activeVariant.isStandard) {
+    const std = variants.find((v) => v.isStandard) ?? variants[0];
+    const equivKg = raw.load.value * (raw.reps > 1 ? 1 + raw.reps / 30 : 1) * activeVariant.toStandardFactor;
+    equivNote = `≈ ${kgToDisplay(equivKg, sys, 0)} ${weightUnit(sys)} ${std?.label?.toLowerCase() ?? "standard"}-equivalent 1RM`;
+  }
 
   return (
     <Sheet title="Record a benchmark" onClose={close}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <span style={{ fontSize: 30 }}>{proto.icon}</span>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: C.ink }}>{leafLabel}</div>
-          <div style={{ fontSize: 11, color: C.muted }}>{proto.category}</div>
-        </div>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: C.ink }}>{leafLabel}</div>
+        <div style={{ fontSize: 11, color: C.muted }}>{proto.category}</div>
       </div>
 
       <div style={{ background: C.inner, border: `1px solid ${C.line2}`, borderRadius: 14, padding: 13, marginBottom: 16 }}>
@@ -304,69 +362,105 @@ export function BenchmarkSheet() {
         )}
       </div>
 
-      <Field label={fields.aLabel} hint={fields.aHint}>
-        <NumInput value={a} onChange={setA} placeholder={fields.aPlaceholder} step={fields.aStep} />
-      </Field>
-      {fields.bLabel && (
-        <Field label={fields.bLabel} hint={fields.bHint}>
-          <NumInput value={b} onChange={setB} placeholder={fields.bPlaceholder} />
+      {/* ── max_load: variant picker + load + reps ── */}
+      {proto.measure === "max_load" && (
+        <>
+          {variants.length > 1 && (
+            <Field label="Variant" hint={activeVariant && !activeVariant.isStandard ? activeVariant.note : "Log whatever you actually train — Peak converts it to the standard."}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                {variants.map((v) => (
+                  <Chip key={v.id} active={activeVariant?.id === v.id} onClick={() => setVariantId(v.id)}>{v.label}</Chip>
+                ))}
+              </div>
+            </Field>
+          )}
+          <Field label={`${perHand ? "Per dumbbell" : "Load"} (${weightUnit(sys)})`} hint={equivNote ?? undefined}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}><UnitToggle kind="weight" /></div>
+            <NumInput value={load} onChange={setLoad} placeholder={imp ? (perHand ? "45" : "225") : (perHand ? "20" : "100")} step="0.5" />
+          </Field>
+          <Field label="Reps in that set" hint="1–5 reps is fine — Peak estimates your 1RM via Epley.">
+            <NumInput value={reps} onChange={setReps} placeholder="1" />
+          </Field>
+        </>
+      )}
+
+      {/* ── rep_max ── */}
+      {proto.measure === "rep_max" && (
+        <Field label="Max reps">
+          <NumInput value={val} onChange={setVal} placeholder="0" />
         </Field>
       )}
 
-      <PrimaryButton disabled={!raw} onClick={() => { if (raw) { s.addBenchmark(leafId, raw); setA(""); setB(""); } }}>
-        Save result
-      </PrimaryButton>
+      {/* ── holds (plank, balance) ── */}
+      {(proto.measure === "hold_duration" || proto.measure === "balance_hold") && (
+        <Field label="Hold time">
+          <DurationInput valueSec={durSec} onChange={setDurSec} />
+        </Field>
+      )}
+
+      {/* ── time_for_distance: clock only, distance fixed ── */}
+      {proto.measure === "time_for_distance" && (
+        <Field
+          label="Finishing time"
+          hint={
+            raw?.kind === "time_for_distance"
+              ? `Pace · ${paceLabel(standardDistanceKm(leafId), durSec ?? 0, sys)}`
+              : "Enter your finishing time."
+          }
+        >
+          <DurationInput valueSec={durSec} onChange={setDurSec} showHours={eventNeedsHours(leafId)} />
+        </Field>
+      )}
+
+      {/* ── sprint_time: clock only ── */}
+      {proto.measure === "sprint_time" && (
+        <Field label="Time">
+          <DurationInput valueSec={durSec} onChange={setDurSec} />
+        </Field>
+      )}
+
+      {/* ── distance_in_time: meters covered in a fixed 60s ── */}
+      {proto.measure === "distance_in_time" && (
+        <Field label="Distance covered (m)" hint="How far you went in the 60-second effort.">
+          <NumInput value={val} onChange={setVal} placeholder="250" />
+        </Field>
+      )}
+
+      {/* ── vo2 ── */}
+      {proto.measure === "vo2_proxy" && (
+        <Field label="VO₂max (ml/kg/min)">
+          <NumInput value={val} onChange={setVal} placeholder="45" step="0.1" />
+        </Field>
+      )}
+
+      {/* ── jump / throw / reach: small length (cm/in) ── */}
+      {(proto.measure === "jump_height" || proto.measure === "throw_distance" || proto.measure === "reach_distance") && (
+        <Field label={`Measurement (${lengthUnit(sys)})`}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}><UnitToggle kind="length" /></div>
+          <NumInput value={val} onChange={setVal} placeholder={imp ? "22" : "55"} step={imp ? "0.1" : "1"} />
+        </Field>
+      )}
+
+      {/* ── rom ── */}
+      {proto.measure === "rom" && (
+        <Field label="Angle (degrees)">
+          <NumInput value={val} onChange={setVal} placeholder="120" />
+        </Field>
+      )}
+
+      <PrimaryButton disabled={!raw} onClick={onSave}>Save result</PrimaryButton>
     </Sheet>
   );
-}
-
-// Most direct leaves run/sprint over a fixed distance — surface a sensible default.
-function defaultLeafDistance(leafId: LeafId): number {
-  if (leafId === "aerobic.5k") return 5;
-  if (leafId === "aerobic.mile") return 1.609;
-  return 0;
-}
-
-// Field config per measure kind. `a` is the primary capture, `b` the secondary.
-function fieldSpec(measure: string, unit: Unit, distUnit: Unit) {
-  switch (measure) {
-    case "max_load":
-      return { aLabel: "Load (kg)", aPlaceholder: "100", aStep: "0.5", bLabel: "Reps in that set", bPlaceholder: "1", bHint: "1–5 reps is fine — Peak estimates your 1RM via Epley." } as const;
-    case "rep_max":
-      return { aLabel: "Max reps", aPlaceholder: "0" } as const;
-    case "hold_duration":
-    case "balance_hold":
-      return { aLabel: "Duration (sec)", aPlaceholder: "60" } as const;
-    case "time_for_distance":
-      return { aLabel: `Distance (${distUnit})`, aPlaceholder: "5", aStep: "0.01", aHint: "Leave blank to use the standard distance.", bLabel: "Finishing time (sec)", bPlaceholder: "1500" } as const;
-    case "sprint_time":
-      return { aLabel: "Distance (m)", aPlaceholder: "400", bLabel: "Time (sec)", bPlaceholder: "60" } as const;
-    case "distance_in_time":
-      return { aLabel: "Distance (m)", aPlaceholder: "250", bLabel: "Duration (sec)", bPlaceholder: "60" } as const;
-    case "vo2_proxy":
-      return { aLabel: "VO₂max (ml/kg/min)", aPlaceholder: "45", aStep: "0.1" } as const;
-    case "jump_height":
-      return { aLabel: `Measurement (${unit})`, aPlaceholder: "0.55", aStep: "0.01" } as const;
-    case "throw_distance":
-    case "reach_distance":
-      return { aLabel: "Distance (m)", aPlaceholder: "0.5", aStep: "0.01" } as const;
-    case "rom":
-      return { aLabel: "Angle (degrees)", aPlaceholder: "120" } as const;
-    default:
-      return { aLabel: "Value", aPlaceholder: "0" } as const;
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GOAL SHEET (§6.8)
 // ─────────────────────────────────────────────────────────────────────────────
-const EMOJI = ["🎯", "💪", "🏃", "🔥", "🏋️", "🧗", "⚡", "🦵", "🫁", "🧘"];
 
 export function GoalSheet() {
   const s = usePeak();
   const [name, setName] = useState("");
   const [dimension, setDimension] = useState<DimensionId>("strength");
-  const [icon, setIcon] = useState("🎯");
   const [targetLeafId, setTargetLeafId] = useState<LeafId | "">("");
   const [targetPct, setTargetPct] = useState("");
 
@@ -376,18 +470,18 @@ export function GoalSheet() {
   const leafOptions = Object.values(LEAF_BY_ID).filter((l) => l.dimension === dimension && !l.deferred);
 
   const close = () => {
-    setName(""); setDimension("strength"); setIcon("🎯"); setTargetLeafId(""); setTargetPct("");
+    setName(""); setDimension("strength"); setTargetLeafId(""); setTargetPct("");
     s.set({ goalOpen: false });
   };
 
   const save = () => {
     const pct = num(targetPct);
     s.addGoal({
-      name, dimension, icon,
+      name, dimension,
       targetLeafId: targetLeafId || undefined,
       targetPercentileRaw: pct != null ? Math.max(0, Math.min(0.99, pct / 100)) : undefined,
     });
-    setName(""); setDimension("strength"); setIcon("🎯"); setTargetLeafId(""); setTargetPct("");
+    setName(""); setDimension("strength"); setTargetLeafId(""); setTargetPct("");
   };
 
   return (
@@ -402,18 +496,6 @@ export function GoalSheet() {
             <Chip key={d.id} active={dimension === d.id} color={d.color} onClick={() => { setDimension(d.id); setTargetLeafId(""); }}>
               {d.label}
             </Chip>
-          ))}
-        </div>
-      </Field>
-
-      <Field label="Icon">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {EMOJI.map((e) => (
-            <button key={e} onClick={() => setIcon(e)}
-              style={{ fontSize: 18, width: 40, height: 40, borderRadius: 10, cursor: "pointer",
-                border: `1px solid ${icon === e ? C.accent : C.line2}`, background: icon === e ? `${C.accent}1f` : C.inner }}>
-              {e}
-            </button>
           ))}
         </div>
       </Field>

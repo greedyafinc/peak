@@ -97,6 +97,16 @@ const otherLeaves: CapabilityLeaf[] = [
   leaf({ id: "aerobic.vo2_proxy", label: "VO₂max (estimated)", dimension: "aerobic", subCategory: "aerobic.vo2", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "vo2_relative", version: "1", conditionsOn: ["sex", "age"] }, unit: "ml/kg/min", massRelative: true, launchConfidenceCeiling: 0.85 }),
   leaf({ id: "aerobic.hr_recovery", label: "HR Recovery (1 min)", dimension: "aerobic", subCategory: "aerobic.vo2", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "vo2_relative", version: "1", conditionsOn: ["sex", "age"] }, unit: "bpm", launchConfidenceCeiling: 0.7 }),
 
+  // aerobic — endurance EVENTS (longer road races + multisport feats). Age-graded
+  // finishing times; mass-relative; the triathlon leaves are thinner-seed (lower ceiling).
+  leaf({ id: "aerobic.10k", label: "10K Run", dimension: "aerobic", subCategory: "aerobic.events", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "wma_age_grade", version: "1", conditionsOn: ["sex", "age"] }, unit: "sec", massRelative: true, launchConfidenceCeiling: 0.88 }),
+  leaf({ id: "aerobic.half_marathon", label: "Half Marathon", dimension: "aerobic", subCategory: "aerobic.events", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "wma_age_grade", version: "1", conditionsOn: ["sex", "age"] }, unit: "sec", massRelative: true, launchConfidenceCeiling: 0.85 }),
+  leaf({ id: "aerobic.marathon", label: "Marathon", dimension: "aerobic", subCategory: "aerobic.events", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "wma_age_grade", version: "1", conditionsOn: ["sex", "age"] }, unit: "sec", massRelative: true, launchConfidenceCeiling: 0.82 }),
+  leaf({ id: "aerobic.tri_sprint", label: "Sprint Triathlon", dimension: "aerobic", subCategory: "aerobic.events", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "wma_age_grade", version: "1", conditionsOn: ["sex", "age"] }, unit: "sec", massRelative: true, launchConfidenceCeiling: 0.62 }),
+  leaf({ id: "aerobic.tri_olympic", label: "Olympic Triathlon", dimension: "aerobic", subCategory: "aerobic.events", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "wma_age_grade", version: "1", conditionsOn: ["sex", "age"] }, unit: "sec", massRelative: true, launchConfidenceCeiling: 0.6 }),
+  leaf({ id: "aerobic.tri_70_3", label: "Half-Ironman (70.3)", dimension: "aerobic", subCategory: "aerobic.events", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "wma_age_grade", version: "1", conditionsOn: ["sex", "age"] }, unit: "sec", massRelative: true, launchConfidenceCeiling: 0.58 }),
+  leaf({ id: "aerobic.tri_ironman", label: "Ironman (140.6)", dimension: "aerobic", subCategory: "aerobic.events", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "wma_age_grade", version: "1", conditionsOn: ["sex", "age"] }, unit: "sec", massRelative: true, launchConfidenceCeiling: 0.55 }),
+
   // anaerobic — mass-relative
   leaf({ id: "anaerobic.400m", label: "400m Sprint", dimension: "anaerobic", subCategory: "anaerobic.sprint", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "anaerobic_norm", version: "1", conditionsOn: ["sex", "age"] }, unit: "sec", massRelative: true, launchConfidenceCeiling: 0.7 }),
   leaf({ id: "anaerobic.sprint_repeats", label: "Repeat Sprint Ability", dimension: "anaerobic", subCategory: "anaerobic.sprint", kind: "direct", muscleGroups: [], movementPatterns: ["run"], contributingExerciseIds: [], normalizer: { method: "anaerobic_norm", version: "1", conditionsOn: ["sex", "age"] }, unit: "sec", massRelative: true, launchConfidenceCeiling: 0.6 }),
@@ -132,7 +142,7 @@ export const SUBCAT_LABEL: Record<string, string> = {
   "strength.legs": "Legs", "strength.core": "Core",
   "power.lower_body": "Lower Body", "power.upper_body": "Upper Body",
   "me.upper_push": "Upper Push", "me.upper_pull": "Upper Pull", "me.core": "Core", "me.lower": "Lower",
-  "aerobic.running": "Running", "aerobic.vo2": "Aerobic Base",
+  "aerobic.running": "Running", "aerobic.vo2": "Aerobic Base", "aerobic.events": "Endurance Events",
   "anaerobic.sprint": "Sprint", "anaerobic.power_endurance": "Power-Endurance",
   "mobility.joint": "Joint ROM",
   "balance.static": "Static", "balance.dynamic": "Dynamic",

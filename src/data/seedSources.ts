@@ -128,6 +128,29 @@ export const SEED_SOURCES: SeedSource[] = [
     vintageNote: "Maintained; foundational CRF percentile reference.",
     url: "https://www.cooperinstitute.org/",
   },
+  {
+    id: "RUNNING_LEVEL",
+    label: "Running-race finishing-time distributions (10K / half / marathon)",
+    dimensions: ["aerobic"],
+    role:
+      "Recreational finishing-time norms for the longer road races (10K, half marathon, marathon) by " +
+      "sex and age, anchored to the same 'intermediate' tier as the 5K/mile seed and shaped by the WMA " +
+      "age-grading curve. Large public race-result aggregates (Running Level / RunRepeat style).",
+    vintageNote: "Aggregated public race results; recreational-finisher medians, not elite fields.",
+    url: "https://runninglevel.com/",
+  },
+  {
+    id: "TRIATHLON_NORMS",
+    label: "Triathlon finishing-time norms (sprint / Olympic / 70.3 / Ironman)",
+    dimensions: ["aerobic"],
+    role:
+      "Median age-group finisher times for the four standard triathlon distances by sex, from public " +
+      "results aggregates. Multisport feats with thin, self-selected fields — a low-confidence seed.",
+    vintageNote:
+      "THIN SEED — self-selected finisher population (not general public), wide spread; low-confidence " +
+      "launch. First-party data needed to harden.",
+    url: "https://www.triathlon.org/",
+  },
 ];
 
 export const SEED_SOURCE_BY_ID = Object.fromEntries(

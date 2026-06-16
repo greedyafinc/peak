@@ -43,8 +43,8 @@ export function BottomNav() {
         <NavBtn key={t.id} t={t} active={s.tab === t.id} onClick={() => s.go(t.id)} />
       ))}
       <button
-        onClick={() => s.set({ logOpen: true })}
-        aria-label="Log a session"
+        onClick={() => (s.activeSession ? s.set({ activeOpen: true }) : s.set({ startOpen: true }))}
+        aria-label={s.activeSession ? "Resume workout" : "Start a workout"}
         style={{
           width: 52,
           height: 52,

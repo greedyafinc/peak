@@ -27,6 +27,7 @@ import type {
 } from "../types";
 import { MODELS, PEAK_CAP } from "../constants";
 import { LEAF_BY_ID } from "../data/capabilityTree";
+import { standardEquivFactor, variantConfidenceFactor } from "../data/benchmarkVariants";
 import { lookupCohortDist, methodologyNoteFor } from "../data/distributions";
 import { buildCohort } from "./cohort";
 import {
@@ -87,9 +88,13 @@ export {
 export function rawScalarFor(leafId: LeafId, raw: RawMeasurement): number | null {
   const leaf = LEAF_BY_ID[leafId];
   switch (raw.kind) {
-    case "max_load":
-      // For a 1RM leaf, a multi-rep max_load is converted to est-1RM (Epley).
-      return raw.reps > 1 ? raw.load.value * (1 + raw.reps / 30) : raw.load.value;
+    case "max_load": {
+      // For a 1RM leaf, a multi-rep max_load is converted to est-1RM (Epley), then
+      // re-expressed onto the STANDARD movement's curve via the variant factor
+      // (1.0 for the standard / barbell). §4.2 flexible benchmarking.
+      const est1rm = raw.reps > 1 ? raw.load.value * (1 + raw.reps / 30) : raw.load.value;
+      return est1rm * standardEquivFactor(raw.variantId);
+    }
     case "rep_max":
       return raw.reps; // bodyweight-movement rep counts
     case "time_for_distance":
@@ -173,11 +178,16 @@ export function scoreBenchmark(
   const guardApplied = guarded !== scalar;
 
   const percentileRaw = percentileInGaussian(guarded, dist);
+  // A non-standard variant (e.g. dumbbell bench) is a converted measurement → an
+  // honest confidence haircut vs the literal standard test (§4.2).
+  const variantConf = raw.kind === "max_load" ? variantConfidenceFactor(raw.variantId) : 1.0;
   const confidence = leafConfidence(leaf, dist, {
     distributionDepth: distributionDepthOf(dist),
     measurementQuality: 1.0, // benchmark = top of the ladder
     recency: 1,
-    inferenceChainLength: 1.0,
+    // a converted variant is shaded via the (un-capped) inference-chain factor, so the
+    // haircut survives even when the leaf's launch ceiling is below the variant factor.
+    inferenceChainLength: variantConf,
   });
 
   return {
@@ -322,13 +332,17 @@ export function recomputeAll(data: PeakData, asOf: string): PeakData {
     const leaf = LEAF_BY_ID[leafId];
     const scalar = leaf ? rawScalarFor(leafId, result.raw) : null;
     if (scalar == null) continue;
+    // A converted variant (e.g. dumbbell bench) is shaded down vs the literal test.
+    const variantConf = result.raw.kind === "max_load" ? variantConfidenceFactor(result.raw.variantId) : 1.0;
     const score = scoreLeafRaw(leafId, scalar, result.buildSnapshot ?? build, {
       source: "benchmark",
       provenanceSource: "measured",
       state: "measured",
       asOf,
       // recency relative to when the benchmark was actually performed.
-      measurementQuality: 1.0 * recencyFactor(0, leaf?.staleAfterDays ?? 60),
+      measurementQuality: recencyFactor(0, leaf?.staleAfterDays ?? 60),
+      // a converted variant (e.g. dumbbell bench) is shaded down vs the literal test.
+      inferenceChainLength: variantConf,
       existing: prevScores[leafId],
     });
     // Override recency-aware confidence using the true age of the benchmark.
@@ -339,7 +353,7 @@ export function recomputeAll(data: PeakData, asOf: string): PeakData {
           distributionDepth: distributionDepthOf(dist),
           measurementQuality: 1.0,
           recency: recencyFactor(daysSince, leaf.staleAfterDays),
-          inferenceChainLength: 1.0,
+          inferenceChainLength: variantConf,
         });
         score.state = daysSince > leaf.staleAfterDays ? "stale" : "measured";
       }

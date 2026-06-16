@@ -120,12 +120,10 @@ export function Improve() {
           </div>
           <div style={{ ...PAD, display: "flex", flexDirection: "column", gap: 8 }}>
             {coverage.map((leafId) => {
-              const proto = BENCHMARK_BY_LEAF[leafId];
               const leaf = LEAF_BY_ID[leafId];
               const dim = leaf ? DIM_META[leaf.dimension] : null;
               return (
                 <Card key={leafId} onClick={() => s.set({ benchOpen: true, benchLeaf: leafId })} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14 }}>
-                  <span style={{ fontSize: 22 }}>{proto.icon}</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{leaf?.label ?? leafId}</div>
                     <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{dim?.label} · untested</div>
@@ -195,7 +193,6 @@ function GoalCard({ goal }: { goal: GoalV3 }) {
     <Card>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 11, alignItems: "center" }}>
-          <span style={{ fontSize: 24 }}>{goal.icon}</span>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{goal.name}</div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>

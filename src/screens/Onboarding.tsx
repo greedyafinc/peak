@@ -2,21 +2,33 @@
 // A multi-step flow — welcome → connect health → immutable build → composition
 // → modular untimed benchmark — building an OnboardInput and routing to Score.
 
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { usePeak, type OnboardInput } from "../store";
-import { BENCHMARKS } from "../data/benchmarks";
+import { BENCHMARKS, standardDistanceKm, eventNeedsHours } from "../data/benchmarks";
+import { variantsForLeaf } from "../data/benchmarkVariants";
 import { LEAF_BY_ID, DIM_META } from "../data/capabilityTree";
-import type { BenchmarkProtocol, LeafId, RawMeasurement, Sex } from "../types";
+import type { BenchmarkProtocol, LeafId, RawMeasurement, Sex, UnitSystem } from "../types";
 import { C, mono, sans } from "../theme";
 import {
   Card,
   Chip,
+  DurationInput,
   Field,
   Kicker,
   PrimaryButton,
-  SegToggle,
+  UnitToggle,
   inputStyle,
 } from "../components/ui";
+import {
+  cmToFtIn,
+  ftInToCm,
+  kgToLb,
+  lbToKg,
+  lengthToMeters,
+  lengthUnit,
+  weightToKg,
+  weightUnit,
+} from "../units";
 
 // ── Step model ────────────────────────────────────────────────────────────────
 const STEPS = ["Welcome", "Health", "Build", "Composition", "Baseline"] as const;
@@ -27,51 +39,54 @@ const STARTERS: BenchmarkProtocol[] = BENCHMARKS.filter(
   (b) => b.starter && b.measure !== "composition",
 );
 
-// Per-protocol captured form state. A protocol is "entered" once its primary
-// field(s) hold a usable number.
+// Per-protocol captured form state. A protocol is "entered" once its field(s)
+// hold a usable value (`a`/`b` for value measures, `durSec` for clocks, `variantId`
+// for variant lifts).
 type BenchEntry = {
-  a?: string; // primary numeric (load / reps / vo2 / distance / angle / cm / min)
-  b?: string; // secondary numeric (reps for max_load, seconds for time, etc.)
+  a?: string;               // primary value (load / reps / vo2 / length / angle / m)
+  b?: string;               // secondary value (reps for max_load)
+  durSec?: number | null;   // clock-shaped capture (holds, runs, sprints)
+  variantId?: string;       // chosen variant for a benchmark lift
 };
 
 // ── RawMeasurement construction (§4.2) — build the union member by measure kind ─
-function buildRaw(p: BenchmarkProtocol, e: BenchEntry): RawMeasurement | null {
+// `sys` only affects unit-bearing fields (load = kg/lb, jump = cm/in); everything
+// is converted to the canonical metric unit before it enters the store.
+function buildRaw(p: BenchmarkProtocol, e: BenchEntry, sys: UnitSystem): RawMeasurement | null {
   const A = e.a != null && e.a !== "" ? Number(e.a) : NaN;
   const B = e.b != null && e.b !== "" ? Number(e.b) : NaN;
-  const leaf = LEAF_BY_ID[p.leafId];
+  const dur = e.durSec ?? 0;
   switch (p.measure) {
     case "max_load": {
       if (!isFinite(A) || A <= 0) return null;
+      const variants = variantsForLeaf(p.leafId);
+      const variant = variants.find((v) => v.id === e.variantId) ?? variants[0];
+      const total = variant?.entry === "perHand" ? A * 2 : A; // dumbbell = one bell × 2
       const reps = isFinite(B) && B >= 1 ? Math.round(B) : 1;
-      return { kind: "max_load", load: { value: A, unit: "kg" }, reps };
+      return {
+        kind: "max_load",
+        load: { value: weightToKg(total, sys), unit: "kg" },
+        reps,
+        variantId: variant?.id,
+        equipment: variant?.equipment,
+      };
     }
     case "rep_max": {
       if (!isFinite(A) || A < 0) return null;
       return { kind: "rep_max", reps: Math.round(A) };
     }
-    case "hold_duration": {
-      if (!isFinite(A) || A <= 0) return null;
-      return { kind: "hold_duration", duration: { value: A, unit: "sec" } };
-    }
-    case "balance_hold": {
-      if (!isFinite(A) || A <= 0) return null;
-      return { kind: "balance_hold", duration: { value: A, unit: "sec" } };
-    }
-    case "time_for_distance": {
-      // A = minutes, B = seconds → total seconds. Distance from the protocol schema.
-      const min = isFinite(A) ? A : 0;
-      const sec = isFinite(B) ? B : 0;
-      const total = min * 60 + sec;
-      if (total <= 0) return null;
-      const distField = p.rawCaptureSchema.find((f) => f.name === "distance");
-      const distUnit = (distField?.unit ?? "km") as "km" | "mi" | "m";
-      const distVal = distUnit === "mi" ? 1 : distUnit === "m" ? 5000 : 5; // 5K vs 1 mile
-      return {
-        kind: "time_for_distance",
-        distance: { value: distVal, unit: distUnit },
-        duration: { value: total, unit: "sec" },
-      };
-    }
+    case "hold_duration":
+      return dur > 0 ? { kind: "hold_duration", duration: { value: dur, unit: "sec" } } : null;
+    case "balance_hold":
+      return dur > 0 ? { kind: "balance_hold", duration: { value: dur, unit: "sec" } } : null;
+    case "time_for_distance":
+      return dur > 0
+        ? { kind: "time_for_distance", distance: { value: standardDistanceKm(p.leafId), unit: "km" }, duration: { value: dur, unit: "sec" } }
+        : null;
+    case "sprint_time":
+      return dur > 0
+        ? { kind: "sprint_time", distance: { value: p.leafId === "anaerobic.sprint_repeats" ? 40 : 400, unit: "m" }, duration: { value: dur, unit: "sec" } }
+        : null;
     case "vo2_proxy": {
       if (!isFinite(A) || A <= 0) return null;
       return { kind: "vo2_proxy", vo2: { value: A, unit: "ml/kg/min" } };
@@ -79,11 +94,8 @@ function buildRaw(p: BenchmarkProtocol, e: BenchEntry): RawMeasurement | null {
     case "jump_height": {
       if (!isFinite(A) || A <= 0) return null;
       // Broad jump captures a horizontal distance; vertical jump a height. Either
-      // way the leaf's raw is meters — the user enters cm.
-      if (leaf?.id === "power.broad_jump") {
-        return { kind: "jump_height", height: { value: A / 100, unit: "m" } };
-      }
-      return { kind: "jump_height", height: { value: A / 100, unit: "m" } };
+      // way the leaf's raw is meters — the user enters cm (metric) / in (imperial).
+      return { kind: "jump_height", height: { value: lengthToMeters(A, sys), unit: "m" } };
     }
     case "throw_distance": {
       if (!isFinite(A) || A <= 0) return null;
@@ -97,54 +109,35 @@ function buildRaw(p: BenchmarkProtocol, e: BenchEntry): RawMeasurement | null {
       if (!isFinite(A) || A <= 0) return null;
       return { kind: "rom", angle: { value: A, unit: "degree" } };
     }
-    case "sprint_time": {
-      const min = isFinite(A) ? A : 0;
-      const sec = isFinite(B) ? B : 0;
-      const total = min * 60 + sec;
-      if (total <= 0) return null;
-      return {
-        kind: "sprint_time",
-        distance: { value: 400, unit: "m" },
-        duration: { value: total, unit: "sec" },
-      };
-    }
     case "distance_in_time": {
       if (!isFinite(A) || A <= 0) return null;
-      return {
-        kind: "distance_in_time",
-        distance: { value: A, unit: "m" },
-        duration: { value: 60, unit: "sec" },
-      };
+      return { kind: "distance_in_time", distance: { value: A, unit: "m" }, duration: { value: 60, unit: "sec" } };
     }
     default:
       return null;
   }
 }
 
-// Compact input field descriptor per measure kind (label + placeholder + dual?).
-function fieldsFor(p: BenchmarkProtocol): { aLabel: string; aPh: string; b?: { label: string; ph: string } } {
+// Single-value measures (everything that isn't a lift or a clock) — label + ph.
+type ValueFieldDesc = { label: string; ph: string; unitKind?: "weight" | "length" };
+function valueField(p: BenchmarkProtocol, sys: UnitSystem): ValueFieldDesc {
+  const imp = sys === "imperial";
   switch (p.measure) {
-    case "max_load":
-      return { aLabel: "Load (kg)", aPh: "100", b: { label: "Reps", ph: "1" } };
     case "rep_max":
-      return { aLabel: "Reps", aPh: "20" };
-    case "hold_duration":
-    case "balance_hold":
-      return { aLabel: "Seconds", aPh: "60" };
-    case "time_for_distance":
-    case "sprint_time":
-      return { aLabel: "Min", aPh: "24", b: { label: "Sec", ph: "30" } };
+      return { label: "Reps", ph: "20" };
     case "vo2_proxy":
-      return { aLabel: "ml/kg/min", aPh: "45" };
+      return { label: "ml/kg/min", ph: "45" };
     case "jump_height":
-      return { aLabel: p.leafId === "power.broad_jump" ? "Distance (cm)" : "Height (cm)", aPh: "55" };
+      return { label: `${p.leafId === "power.broad_jump" ? "Distance" : "Height"} (${lengthUnit(sys)})`, ph: imp ? "22" : "55", unitKind: "length" };
     case "throw_distance":
     case "reach_distance":
-      return { aLabel: "Meters", aPh: "5.0" };
+      return { label: "Meters", ph: "5.0" };
+    case "distance_in_time":
+      return { label: "Meters in 60s", ph: "250" };
     case "rom":
-      return { aLabel: "Degrees", aPh: "120" };
+      return { label: "Degrees", ph: "120" };
     default:
-      return { aLabel: "Value", aPh: "0" };
+      return { label: "Value", ph: "0" };
   }
 }
 
@@ -159,6 +152,7 @@ const content: CSSProperties = { padding: "0 22px" };
 
 export function Onboarding() {
   const s = usePeak();
+  const sys = s.data.unitSystem;
   const [step, setStep] = useState(0);
 
   // Form state
@@ -177,11 +171,11 @@ export function Onboarding() {
   const enteredBenchmarks = useMemo(() => {
     const out: { leafId: LeafId; raw: RawMeasurement }[] = [];
     for (const p of STARTERS) {
-      const raw = buildRaw(p, bench[p.leafId] ?? {});
+      const raw = buildRaw(p, bench[p.leafId] ?? {}, sys);
       if (raw) out.push({ leafId: p.leafId, raw });
     }
     return out;
-  }, [bench]);
+  }, [bench, sys]);
 
   function finish() {
     const input: OnboardInput = {
@@ -349,7 +343,7 @@ function HealthStep({ connected, onConnect, onManual }: { connected: boolean | n
   return (
     <div>
       <StepHead title="Connect your health data" sub="Peak reads height, bodyweight & composition passively. You never log bodyweight by hand." />
-      <div style={{ fontSize: 44, textAlign: "center", margin: "10px 0 22px" }}>♥</div>
+      <div style={{ height: 12 }} />
       <button
         onClick={onConnect}
         style={{
@@ -394,21 +388,8 @@ function HealthStep({ connected, onConnect, onManual }: { connected: boolean | n
   );
 }
 
-// cm → {ft, in}, with inch-rollover (11.6″ rounds to a clean 12″ → +1 ft).
-function cmToFtIn(cm: number): { ft: number; inch: number } {
-  const totalIn = cm / 2.54;
-  let ft = Math.floor(totalIn / 12);
-  let inch = Math.round(totalIn - ft * 12);
-  if (inch === 12) {
-    ft += 1;
-    inch = 0;
-  }
-  return { ft, inch };
-}
-
-// Bodyweight is stored canonically in kg; lbs is only an input convenience.
-const kgToLbs = (kg: number): number => Math.round(kg * 2.20462 * 10) / 10;
-const lbsToKg = (lbs: number): number => Math.round((lbs / 2.20462) * 10) / 10;
+// Round a converted weight to one decimal (lbs/kg display convenience).
+const w1 = (n: number): number => Math.round(n * 10) / 10;
 
 // Unit suffix shown inside an input (the absolute-positioned label).
 const unitSuffix: CSSProperties = {
@@ -437,26 +418,29 @@ function BuildStep({
   birthDate: string;
   setBirthDate: (s: string) => void;
 }) {
-  // Canonical state is always heightCm; the toggle only changes how it's entered.
+  // Canonical state is always heightCm; the global unitSystem only changes how
+  // it's entered.
+  const sys = usePeak().data.unitSystem;
+  const isImp = sys === "imperial";
   const cmNum = Number(heightCm);
   const hasHeight = cmNum > 50;
 
-  const [unit, setUnit] = useState<"cm" | "ft">("cm");
   // ft/in have their own local strings so typing "5" then "10" doesn't jitter
   // through a lossy cm round-trip on every keystroke.
   const [feet, setFeet] = useState(() => (hasHeight ? String(cmToFtIn(cmNum).ft) : ""));
   const [inches, setInches] = useState(() => (hasHeight ? String(cmToFtIn(cmNum).inch) : ""));
 
-  function switchUnit(u: "cm" | "ft") {
-    if (u === unit) return;
-    // Seed the ft/in fields from the current canonical cm when switching in.
-    if (u === "ft" && cmNum > 50) {
+  // When the user flips to imperial, seed ft/in from the canonical cm so the
+  // fields aren't blank. Flipping back to cm needs no seeding (cm is the truth).
+  useEffect(() => {
+    if (isImp && cmNum > 50) {
       const { ft, inch } = cmToFtIn(cmNum);
       setFeet(String(ft));
       setInches(String(inch));
     }
-    setUnit(u);
-  }
+    // Only re-seed on a unit flip, not on every cm keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isImp]);
 
   function updateFtIn(f: string, i: string) {
     setFeet(f);
@@ -465,20 +449,18 @@ function BuildStep({
       setHeightCm("");
       return;
     }
-    const ft = Number(f) || 0;
-    const inch = Number(i) || 0;
-    const cm = Math.round((ft * 12 + inch) * 2.54);
+    const cm = ftInToCm(Number(f) || 0, Number(i) || 0);
     setHeightCm(cm > 0 ? String(cm) : "");
   }
 
   const hint = !hasHeight
     ? undefined
-    : unit === "cm"
-      ? (() => {
+    : isImp
+      ? `≈ ${cmNum} cm`
+      : (() => {
           const { ft, inch } = cmToFtIn(cmNum);
           return `≈ ${ft}′${inch}″`;
-        })()
-      : `≈ ${cmNum} cm`;
+        })();
 
   return (
     <div>
@@ -493,16 +475,9 @@ function BuildStep({
 
       <Field label="Height" hint={hint}>
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-          <SegToggle
-            value={unit}
-            onChange={switchUnit}
-            options={[
-              { label: "cm", value: "cm" },
-              { label: "ft / in", value: "ft" },
-            ]}
-          />
+          <UnitToggle kind="height" />
         </div>
-        {unit === "cm" ? (
+        {!isImp ? (
           <div style={{ position: "relative" }}>
             <input
               style={inputStyle}
@@ -571,20 +546,21 @@ function CompositionStep({
   bodyFatPct: string;
   setBodyFatPct: (s: string) => void;
 }) {
-  // Canonical state is always kg; the toggle only changes how it's entered.
+  // Canonical state is always kg; the global unitSystem only changes how it's entered.
+  const sys = usePeak().data.unitSystem;
+  const isImp = sys === "imperial";
   const kgNum = Number(bodyweightKg);
   const hasWeight = bodyweightKg !== "" && kgNum > 0;
 
-  const [wUnit, setWUnit] = useState<"kg" | "lbs">("kg");
   // lbs keeps its own local string so typing doesn't jitter through a lossy
   // kg round-trip on every keystroke.
-  const [lbsStr, setLbsStr] = useState(() => (hasWeight ? String(kgToLbs(kgNum)) : ""));
+  const [lbsStr, setLbsStr] = useState(() => (hasWeight ? String(w1(kgToLb(kgNum))) : ""));
 
-  function switchWUnit(u: "kg" | "lbs") {
-    if (u === wUnit) return;
-    if (u === "lbs" && kgNum > 0) setLbsStr(String(kgToLbs(kgNum)));
-    setWUnit(u);
-  }
+  // Re-seed lbs from canonical kg when the user flips to imperial.
+  useEffect(() => {
+    if (isImp && kgNum > 0) setLbsStr(String(w1(kgToLb(kgNum))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isImp]);
 
   function updateLbs(v: string) {
     setLbsStr(v);
@@ -593,31 +569,24 @@ function CompositionStep({
       setBodyweightKg("");
       return;
     }
-    setBodyweightKg(String(lbsToKg(lbs)));
+    setBodyweightKg(String(w1(lbToKg(lbs))));
   }
 
   const weightHint = !hasWeight
     ? undefined
-    : wUnit === "kg"
-      ? `≈ ${kgToLbs(kgNum)} lbs`
-      : `≈ ${kgNum} kg`;
+    : isImp
+      ? `≈ ${kgNum} kg`
+      : `≈ ${w1(kgToLb(kgNum))} lb`;
 
   return (
     <div>
       <StepHead title="Composition" sub="Optional — leave blank to skip." />
       <Field label="Bodyweight" hint={weightHint}>
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-          <SegToggle
-            value={wUnit}
-            onChange={switchWUnit}
-            options={[
-              { label: "kg", value: "kg" },
-              { label: "lbs", value: "lbs" },
-            ]}
-          />
+          <UnitToggle kind="weight" />
         </div>
         <div style={{ position: "relative" }}>
-          {wUnit === "kg" ? (
+          {!isImp ? (
             <input
               style={inputStyle}
               type="number"
@@ -636,7 +605,7 @@ function CompositionStep({
               onChange={(e) => updateLbs(e.target.value)}
             />
           )}
-          <span style={unitSuffix}>{wUnit}</span>
+          <span style={unitSuffix}>{weightUnit(sys)}</span>
         </div>
       </Field>
       <Field label="Body fat">
@@ -715,20 +684,32 @@ function BaselineStep({
 }
 
 function BenchCard({ p, entry, onChange }: { p: BenchmarkProtocol; entry: BenchEntry; onChange: (patch: Partial<BenchEntry>) => void }) {
-  const f = fieldsFor(p);
+  const sys = usePeak().data.unitSystem;
   const meta = DIM_META[p.dimension];
-  const filled = buildRaw(p, entry) != null;
+  const filled = buildRaw(p, entry, sys) != null;
   const small: CSSProperties = {
     ...inputStyle,
     fontSize: 15,
     padding: "9px 10px",
     textAlign: "center",
   };
-  const clear = () => onChange({ a: "", b: "" });
+  const clear = () => onChange({ a: "", b: "", durSec: null });
+
+  const isLift = p.measure === "max_load";
+  const isClock =
+    p.measure === "hold_duration" ||
+    p.measure === "balance_hold" ||
+    p.measure === "time_for_distance" ||
+    p.measure === "sprint_time";
+
+  const variants = isLift ? variantsForLeaf(p.leafId) : [];
+  const activeVariant = variants.find((v) => v.id === entry.variantId) ?? variants[0];
+  const perHand = activeVariant?.entry === "perHand";
+  const vf = valueField(p, sys);
+
   return (
     <Card style={{ padding: 13 }} glow={filled ? meta?.color : undefined}>
       <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-        <div style={{ fontSize: 22, width: 30, textAlign: "center", flexShrink: 0 }}>{p.icon}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{LEAF_BY_ID[p.leafId]?.label ?? p.leafId}</div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{p.category}</div>
@@ -739,35 +720,48 @@ function BenchCard({ p, entry, onChange }: { p: BenchmarkProtocol; entry: BenchE
           </button>
         )}
       </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 11, alignItems: "flex-end" }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>{f.aLabel}</div>
-          <input
-            style={small}
-            type="number"
-            inputMode="decimal"
-            placeholder={f.aPh}
-            value={entry.a ?? ""}
-            onChange={(e) => onChange({ a: e.target.value })}
+
+      {/* variant chips for the benchmark lifts */}
+      {isLift && variants.length > 1 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 11 }}>
+          {variants.map((v) => (
+            <Chip key={v.id} active={activeVariant?.id === v.id} onClick={() => onChange({ variantId: v.id })}>{v.label}</Chip>
+          ))}
+        </div>
+      )}
+
+      {isClock ? (
+        <div style={{ marginTop: 11 }}>
+          <DurationInput
+            valueSec={entry.durSec ?? null}
+            onChange={(sec) => onChange({ durSec: sec })}
+            showHours={p.measure === "time_for_distance" && eventNeedsHours(p.leafId)}
           />
         </div>
-        {f.b && (
-          <>
-            <div style={{ paddingBottom: 9, color: C.muted, fontSize: 16, fontFamily: mono }}>:</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>{f.b.label}</div>
-              <input
-                style={small}
-                type="number"
-                inputMode="numeric"
-                placeholder={f.b.ph}
-                value={entry.b ?? ""}
-                onChange={(e) => onChange({ b: e.target.value })}
-              />
+      ) : isLift ? (
+        <div style={{ display: "flex", gap: 8, marginTop: 11, alignItems: "flex-end" }}>
+          <div style={{ flex: 1.4 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>{perHand ? "Per DB" : "Load"} ({weightUnit(sys)})</span>
+              <UnitToggle kind="weight" />
             </div>
-          </>
-        )}
-      </div>
+            <input style={small} type="number" inputMode="decimal" placeholder={perHand ? "20" : "100"} value={entry.a ?? ""} onChange={(e) => onChange({ a: e.target.value })} />
+          </div>
+          <div style={{ paddingBottom: 9, color: C.muted, fontSize: 16, fontFamily: mono }}>×</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>Reps</div>
+            <input style={small} type="number" inputMode="numeric" placeholder="1" value={entry.b ?? ""} onChange={(e) => onChange({ b: e.target.value })} />
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 11 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>{vf.label}</span>
+            {vf.unitKind && <UnitToggle kind={vf.unitKind} />}
+          </div>
+          <input style={small} type="number" inputMode="decimal" placeholder={vf.ph} value={entry.a ?? ""} onChange={(e) => onChange({ a: e.target.value })} />
+        </div>
+      )}
     </Card>
   );
 }

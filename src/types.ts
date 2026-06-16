@@ -25,6 +25,11 @@ export type Unit =
 
 export type Quantity = { value: number; unit: Unit };
 
+// Display/entry preference. The store is always canonical metric; this only
+// changes how values are shown and entered (see src/units.ts). One global flag
+// flips every input + display; subtle per-field toggles all write to it.
+export type UnitSystem = "metric" | "imperial";
+
 // ── Controlled vocabularies (§6.3) ───────────────────────────────────────────
 export type DimensionId =
   | "strength"            // "Maximal Strength"
@@ -235,13 +240,16 @@ export type BenchmarkProtocol = {
   confidenceCeiling: number;   // [0,1]
   // beta UX helpers:
   category: string;            // grouping label for the benchmark picker
-  icon: string;
   starter?: boolean;           // part of the recommended onboarding starter set
 };
 
 // RawMeasurement is a typed union keyed by `kind` (§4.2).
 export type RawMeasurement =
-  | { kind: "max_load"; load: Quantity; reps: number }
+  // `load`/`reps` are ALWAYS the actual variant lifted (canonical, honest). For a
+  // non-standard variant (e.g. dumbbell bench), `variantId`/`equipment` record what
+  // was done; the engine maps the est-1RM onto the standard's curve via a documented
+  // conversion factor (§4.2 flexible benchmarking) — the raw is never rewritten.
+  | { kind: "max_load"; load: Quantity; reps: number; variantId?: string; equipment?: Equipment }
   | { kind: "rep_max"; reps: number; load?: Quantity }
   | { kind: "time_for_distance"; distance: Quantity; duration: Quantity }
   | { kind: "distance_in_time"; distance: Quantity; duration: Quantity }
@@ -333,11 +341,32 @@ export type Session = {
   title: string;
   build: BuildSnapshot;
   composition: CompositionSnapshot | null;
-  programId?: string;
+  programId?: string;          // FK → RoutineDef.id when started from a routine
   entries: ExerciseEntry[];
   cardio?: CardioSetRecord[];
   notes?: string;
   durationMin?: number;
+};
+
+// ── Routines / templates (§6.4 program scaffolding) ──────────────────────────
+// A reusable Gym template the live session can be seeded from. Built-ins ship as
+// reference data; user-saved routines live in PeakData.routines. Suggested sets /
+// rep range are scaffolding only — the honest raw events are still the logged sets.
+export type RoutineExercise = {
+  exerciseId: string;          // FK → ExerciseDef
+  sets: number;                // suggested working-set count
+  repLow?: number;             // suggested rep-range low
+  repHigh?: number;            // suggested rep-range high
+};
+
+export type RoutineDef = {
+  id: string;
+  name: string;
+  focus?: string;              // short tag, e.g. "Push", "Full Body"
+  blurb?: string;
+  exercises: RoutineExercise[];
+  builtIn?: boolean;           // true for shipped templates
+  createdAt?: string;          // ISO-8601, for user-saved routines
 };
 
 // ── Capability scores (§2.2, §6.6) ───────────────────────────────────────────
@@ -447,7 +476,7 @@ export type Headline = {
 export type SeedSourceId =
   | "SYMMETRIC_STRENGTH" | "EXRX" | "MILITARY_FITNESS" | "CDC" | "WHO"
   | "NHANES_DEXA" | "NHANES_ANTHRO" | "WMA_AGE_GRADED" | "BALANCE_NORMS" | "AGILITY_NORMS"
-  | "ACSM" | "COOPER";
+  | "ACSM" | "COOPER" | "RUNNING_LEVEL" | "TRIATHLON_NORMS";
 
 export type SeedSource = {
   id: SeedSourceId;
@@ -515,7 +544,6 @@ export type GoalV3 = {
   id: string;
   name: string;
   dimension: DimensionId;
-  icon: string;
   createdAt: string;
   target?: { nodeId: string; targetPercentileRaw?: number; targetQuantity?: Quantity };
   provenance: Provenance;
@@ -542,8 +570,10 @@ export type PeakData = {
     generatedBy: string;
   };
   onboarded: boolean;
+  unitSystem: UnitSystem;      // display/entry preference (canonical store stays metric)
   biometric: BiometricProfile | null;
   sessions: Session[];
+  routines: RoutineDef[];      // user-saved Gym templates (built-ins ship as data)
   leafScores: Record<LeafId, LeafScore>;
   muscleEstimates: Partial<Record<MuscleGroup, MuscleGroupEstimate>>;
   benchmarkResults: BenchmarkResult[];

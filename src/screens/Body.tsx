@@ -12,6 +12,7 @@ import { tierForPercentile } from "../engine";
 import { BodyMap, type BodyMuscle } from "../viz/BodyMap";
 import { MUSCLE_TO_SVG, SVG_TO_MUSCLE } from "../data/muscleMap";
 import { ALL_MUSCLES } from "../data/capabilityTree";
+import { fmtWeight, kgToDisplay, weightUnit } from "../units";
 import type { BfBand, BandDefinition, MuscleGroup, MuscleGroupEstimate } from "../types";
 
 const SCREEN: React.CSSProperties = {
@@ -30,6 +31,7 @@ const BAND_COLOR: Record<BfBand, string> = {
 export function Body() {
   const s = usePeak();
   const { data } = s;
+  const sys = data.unitSystem;
   const comp = data.biometric?.latestComposition ?? null;
 
   // ── A) muscle heat map data ────────────────────────────────────────────────
@@ -111,7 +113,7 @@ export function Body() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <span style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.6px" }}>Est. working strength</span>
                     <span style={{ fontFamily: mono, fontSize: 16, fontWeight: 700, color: C.ink }}>
-                      {selEst.estStrength ? `${Math.round(selEst.estStrength.value)} ${selEst.estStrength.unit}` : "—"}
+                      {selEst.estStrength ? fmtWeight(selEst.estStrength.value, sys, 0) : "—"}
                     </span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
@@ -147,7 +149,6 @@ export function Body() {
       ) : (
         <div style={{ ...PAD }}>
           <Card style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 40, marginBottom: 8 }}>🧬</div>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.ink, marginBottom: 6 }}>Unlock composition</div>
             <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.5, marginBottom: 16 }}>
               Add your bodyweight & body-fat to unlock FFMI, your body-fat band, and a muscle-aware ideal-weight range.
@@ -183,6 +184,7 @@ function Legend() {
 
 // ── Composition block ───────────────────────────────────────────────────────
 function Composition({ comp }: { comp: NonNullable<ReturnType<typeof usePeak>["data"]["biometric"]>["latestComposition"] }) {
+  const sys = usePeak().data.unitSystem;
   if (!comp || !comp.ffmi || !comp.bodyFatPct) return null;
   const ffmiTier = comp.ffmiPercentile != null ? tierForPercentile(comp.ffmiPercentile) : null;
   const band = comp.bandDefinition;
@@ -194,7 +196,7 @@ function Composition({ comp }: { comp: NonNullable<ReturnType<typeof usePeak>["d
       <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
         <StatTile value={comp.ffmi.value.toFixed(1)} label="FFMI kg/m²" color={C.accent} />
         <StatTile value={`${comp.bodyFatPct.value.toFixed(0)}%`} label="Body fat" color={C.mint} />
-        <StatTile value={comp.leanMass ? `${comp.leanMass.value.toFixed(0)}` : "—"} label="Lean mass kg" color={C.blue} />
+        <StatTile value={comp.leanMass ? `${kgToDisplay(comp.leanMass.value, sys, 0)}` : "—"} label={`Lean mass ${weightUnit(sys)}`} color={C.blue} />
       </div>
 
       {/* FFMI card */}
@@ -238,9 +240,9 @@ function Composition({ comp }: { comp: NonNullable<ReturnType<typeof usePeak>["d
           <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 6 }}>Muscle-aware ideal weight</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
             <span style={{ fontFamily: mono, fontSize: 24, fontWeight: 700, color: C.mint }}>
-              {ideal.low.value.toFixed(0)}–{ideal.high.value.toFixed(0)}
+              {kgToDisplay(ideal.low.value, sys, 0)}–{kgToDisplay(ideal.high.value, sys, 0)}
             </span>
-            <span style={{ fontSize: 13, color: C.sub }}>kg</span>
+            <span style={{ fontSize: 13, color: C.sub }}>{weightUnit(sys)}</span>
           </div>
           <div style={{ fontSize: 12, color: C.sub, marginTop: 10, lineHeight: 1.5 }}>
             Ideal weight rises with muscle — it's a target, never a judgment. As your lean mass grows, this range moves up with you.

@@ -4,8 +4,10 @@
 import { useMemo } from "react";
 import { usePeak } from "../store";
 import { C, mono, WORKOUT_THEME } from "../theme";
-import { Card, SectionTitle, Kicker, PrimaryButton } from "../components/ui";
+import { Card, SectionTitle, Kicker, PrimaryButton, GhostButton } from "../components/ui";
 import { EXERCISE_BY_ID } from "../data/exercises";
+import { isPerArm } from "../data/exerciseCatalog";
+import { fmtClock, fmtDistanceKm, kgToDisplay, paceLabel, weightUnit } from "../units";
 import type { Session, ConsistencyTrack } from "../types";
 
 const SCREEN: React.CSSProperties = {
@@ -48,8 +50,25 @@ export function Log() {
         <MomentumHero c={c} days14={days14} />
       </div>
 
-      <div style={{ ...PAD, paddingTop: 18 }}>
-        <PrimaryButton onClick={() => s.set({ logOpen: true })}>＋ Log a session</PrimaryButton>
+      <div style={{ ...PAD, paddingTop: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+        {s.activeSession ? (
+          <button
+            onClick={() => s.set({ activeOpen: true })}
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "13px 16px", borderRadius: 15, cursor: "pointer", border: `1px solid ${C.accent}55`, background: `${C.accent}12` }}
+          >
+            <span style={{ width: 9, height: 9, borderRadius: 5, background: C.accent, animation: "pulseDot 1.6s ease-in-out infinite", flexShrink: 0 }} />
+            <div style={{ flex: 1, textAlign: "left" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>Workout in progress</div>
+              <div style={{ fontSize: 11, color: C.muted }}>{s.activeSession.title || "Untitled"}</div>
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.5px" }}>Resume</span>
+          </button>
+        ) : (
+          <PrimaryButton onClick={() => s.set({ startOpen: true })}>＋ Start a workout</PrimaryButton>
+        )}
+        <GhostButton color={C.sub} onClick={() => s.set({ logOpen: true })} style={{ width: "100%", textAlign: "center", background: "transparent", border: `1px solid ${C.line2}` }}>
+          Quick log a past session or cardio
+        </GhostButton>
       </div>
 
       <div style={{ ...PAD, paddingTop: 20 }}>
@@ -61,7 +80,6 @@ export function Log() {
       {sessions.length === 0 ? (
         <div style={PAD}>
           <Card style={{ textAlign: "center", padding: "30px 20px" }}>
-            <div style={{ fontSize: 38, marginBottom: 10 }}>📓</div>
             <div style={{ fontSize: 14, color: C.sub, lineHeight: 1.55 }}>
               No sessions yet. Log your first to start sharpening your muscle map and momentum.
             </div>
@@ -84,7 +102,6 @@ function MomentumHero({ c, days14 }: { c: ConsistencyTrack; days14: { key: strin
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
         <div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: 30 }}>🔥</span>
             <span style={{ fontFamily: mono, fontSize: 40, fontWeight: 700, color: C.accent, lineHeight: 1 }}>{c.currentStreakDays}</span>
             <span style={{ fontSize: 13, color: C.sub }}>day streak</span>
           </div>
@@ -143,6 +160,9 @@ function HeroStat({ value, label }: { value: string; label: string }) {
 
 // ── Session card with per-set detail (§6.4) ───────────────────────────────────
 function SessionCard({ sess }: { sess: Session }) {
+  const s = usePeak();
+  const sys = s.data.unitSystem;
+  const wUnit = weightUnit(sys);
   const theme = WORKOUT_THEME[sess.type];
   const time = new Date(sess.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
@@ -168,9 +188,27 @@ function SessionCard({ sess }: { sess: Session }) {
       <div style={{ padding: "0 16px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
         {sess.entries.map((entry) => {
           const ex = EXERCISE_BY_ID[entry.exerciseId];
+          const perArm = ex ? isPerArm(ex) : false;
           return (
             <div key={entry.id}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.ink2, marginBottom: 6 }}>{ex?.name ?? entry.exerciseId}</div>
+              {/* tap an exercise → its in-depth detail (trajectory, percentile, history, tips) */}
+              <button
+                onClick={() => ex && s.set({ exDetail: { kind: "strength", exerciseId: entry.exerciseId } })}
+                disabled={!ex}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", gap: 6, marginBottom: 6,
+                  background: "none", border: "none", padding: 0, textAlign: "left",
+                  cursor: ex ? "pointer" : "default",
+                }}
+              >
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.ink2 }}>{ex?.name ?? entry.exerciseId}</span>
+                {perArm && (
+                  <span style={{ fontSize: 8.5, fontWeight: 700, color: C.blue, background: `${C.blue}1f`, padding: "1px 5px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                    Per arm
+                  </span>
+                )}
+                {ex && <span style={{ marginLeft: "auto", color: C.muted, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>›</span>}
+              </button>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {entry.sets.map((set, i) => {
                   const w = set.weight?.value;
@@ -179,10 +217,10 @@ function SessionCard({ sess }: { sess: Session }) {
                     <div key={set.id} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: mono, fontSize: 12 }}>
                       <span style={{ color: C.muted, width: 18 }}>{i + 1}</span>
                       <span style={{ color: C.ink }}>
-                        {w != null ? `${w}kg × ${set.reps}` : `${set.reps} reps`}
+                        {w != null ? `${Number(kgToDisplay(w, sys, 1))}${wUnit}${perArm ? "/arm" : ""} × ${set.reps}` : `${set.reps} reps`}
                       </span>
                       {set.rpe != null && <span style={{ color: C.orange }}>@{set.rpe}</span>}
-                      {e1 != null && <span style={{ color: C.muted, marginLeft: "auto" }}>~{Math.round(e1)}kg 1RM</span>}
+                      {e1 != null && <span style={{ color: C.muted, marginLeft: "auto" }}>~{kgToDisplay(e1, sys, 0)}{wUnit} 1RM</span>}
                     </div>
                   );
                 })}
@@ -191,14 +229,25 @@ function SessionCard({ sess }: { sess: Session }) {
           );
         })}
 
-        {sess.cardio?.map((cs) => (
-          <div key={cs.id} style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: mono, fontSize: 13, color: C.ink }}>
-            {cs.distance && <span>{cs.distance.value} km</span>}
-            <span style={{ color: C.muted }}>·</span>
-            <span>{cs.duration.value} min</span>
-            {cs.avgHr && <><span style={{ color: C.muted }}>·</span><span style={{ color: C.red }}>{cs.avgHr.value} bpm</span></>}
-          </div>
-        ))}
+        {sess.cardio?.map((cs) => {
+          const durSec = cs.duration.value * 60; // cardio duration canonical = minutes
+          return (
+            <button
+              key={cs.id}
+              onClick={() => s.set({ exDetail: { kind: "cardio", sessionId: sess.id, cardioId: cs.id } })}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, fontFamily: mono, fontSize: 13, color: C.ink, flexWrap: "wrap", background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer" }}
+            >
+              {cs.distance && <span>{fmtDistanceKm(cs.distance.value, sys)}</span>}
+              {cs.distance && <span style={{ color: C.muted }}>·</span>}
+              <span>{fmtClock(durSec)}</span>
+              {cs.distance && cs.distance.value > 0 && (
+                <><span style={{ color: C.muted }}>·</span><span style={{ color: C.muted }}>{paceLabel(cs.distance.value, durSec, sys)}</span></>
+              )}
+              {cs.avgHr && <><span style={{ color: C.muted }}>·</span><span style={{ color: C.red }}>{cs.avgHr.value} bpm</span></>}
+              <span style={{ marginLeft: "auto", color: C.muted, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>›</span>
+            </button>
+          );
+        })}
 
         {sess.notes && <div style={{ fontSize: 12, color: C.sub, fontStyle: "italic", lineHeight: 1.5 }}>{sess.notes}</div>}
       </div>
