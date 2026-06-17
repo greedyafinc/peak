@@ -1,23 +1,30 @@
-// Peak — small "muscles worked" body map for the EXERCISE DETAIL screen.
+// Peak — small "muscles worked" body map. Shared by the EXERCISE DETAIL screen (lit
+// by a single lift's attribution) and the SESSION DETAIL screen (lit by the whole
+// session's aggregated muscle emphasis).
 //
-// A compact, read-only companion to the per-region "Muscles worked" rows: the same
-// front/back silhouettes the strength heat-map uses (§4.3), but lit by THIS LIFT's
-// attribution rather than your strength. Worked muscles glow in the exercise's accent
-// color — primary movers brightest, assists fainter, scaled by each group's share of
-// the lift. Only the view(s) the exercise actually trains are drawn (a curl shows just
-// the front; a bench shows front + back), so there's never an empty silhouette.
+// A compact, read-only companion to the per-muscle "Muscles worked" rows: the same
+// front/back silhouettes the strength heat-map uses (§4.3), but lit by the worked
+// muscles rather than your strength. Worked muscles glow in the accent color —
+// primary movers brightest, assists fainter, scaled by each group's share of the
+// work. Only the view(s) actually trained are drawn (a curl shows just the front; a
+// bench shows front + back), so there's never an empty silhouette.
 
 import { FRONT, BACK, type BodySide } from "../data/bodyGeometry";
 import { MUSCLE_TO_SVG } from "../data/muscleMap";
 import { C, mono, hexA, glow } from "../theme";
-import type { MuscleWorked } from "../engine/exerciseDetail";
+import type { MuscleGroup } from "../types";
+
+// The minimal per-muscle input the map needs: which group, its share of the work
+// (0..1), and whether it's a primary mover (primaries glow). Both exercise-detail
+// `MuscleWorked` rows and session-detail muscle-emphasis shares satisfy this.
+export type BodyMapMuscle = { group: MuscleGroup; share: number; primary?: boolean };
 
 // Per-SVG-region highlight: how hot to light it, and whether it's a primary mover
 // (primaries get a glow). Several MuscleGroups can share one SVG key (front+side delt
 // → "delts"); we keep the strongest and OR the primary flag.
 type Fill = { intensity: number; primary: boolean };
 
-export function ExerciseBodyMap({ muscles, color }: { muscles: MuscleWorked[]; color: string }) {
+export function ExerciseBodyMap({ muscles, color }: { muscles: BodyMapMuscle[]; color: string }) {
   const maxShare = Math.max(...muscles.map((m) => m.share), 1e-4);
   const fills: Record<string, Fill> = {};
   for (const m of muscles) {
