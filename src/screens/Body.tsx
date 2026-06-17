@@ -7,9 +7,9 @@ import { SCREEN_STYLE, contentPad } from "./layoutPresets";
 import { C, mono, heat, radius } from "../theme";
 import {
   Card, TierBadge, StatTile, SectionHeader, Chip, PrimaryButton,
-  ConfidenceMeter, PercentileBar, pctLabel, pct100,
+  ConfidenceMeter, PercentileBar, pctLabel, pct100, score100, tierForScore,
 } from "../components/ui";
-import { tierForPercentile, regionTrainingForGroup, type RegionTrainingResult } from "../engine";
+import { peakScoreFromPercentile, regionTrainingForGroup, type RegionTrainingResult } from "../engine";
 import { BodyMap, type BodyMuscle } from "../viz/BodyMap";
 import { SUBREGION_BANDS } from "../viz/bodyRegions";
 import { MUSCLE_TO_SVG, SVG_TO_MUSCLE } from "../data/muscleMap";
@@ -38,7 +38,7 @@ export function Body() {
     for (const mg of ALL_MUSCLES) {
       const est = data.muscleEstimates[mg];
       const tested = !!est && est.percentileRaw != null;
-      const score = tested ? pct100(est!.percentileRaw) : 0;
+      const score = tested ? pct100(est!.peakScore) : 0;
       for (const key of MUSCLE_TO_SVG[mg].svgKeys) {
         // Multiple MuscleGroups can share an SVG key (delts). Keep the strongest.
         if (seen.has(key)) {
@@ -120,22 +120,22 @@ export function Body() {
       {/* ── Selected muscle detail ── */}
       {selLabel && (
         <div style={{ ...contentPad(), paddingBottom: 12 }}>
-          <Card glow={selEst?.tier ? heat(pct100(selEst.percentileRaw)) : undefined}>
+          <Card glow={selEst?.tier ? heat(pct100(selEst.peakScore)) : undefined}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: C.ink, letterSpacing: "-0.3px" }}>{selLabel}</div>
-              <TierBadge tier={selEst?.percentileRaw != null ? tierForPercentile(selEst.percentileRaw) : null} small />
+              <TierBadge tier={selEst?.peakScore != null ? tierForScore(selEst.peakScore) : null} small />
             </div>
 
             {selEst && selEst.percentileRaw != null ? (
               <>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 12 }}>
-                  <div style={{ fontFamily: mono, fontSize: 30, fontWeight: 700, color: heat(pct100(selEst.percentileRaw)) }}>
-                    {pctLabel(selEst.percentileRaw)}
+                  <div style={{ fontFamily: mono, fontSize: 30, fontWeight: 800, color: heat(pct100(selEst.peakScore)) }}>
+                    {score100(selEst.peakScore)}
                   </div>
-                  <div style={{ fontSize: 12, color: C.sub }}>percentile vs your build</div>
+                  <div style={{ fontSize: 12, color: C.sub }}>/100 toward your peak · {pctLabel(selEst.percentileRaw)} vs your build</div>
                 </div>
                 <div style={{ marginTop: 10 }}>
-                  <PercentileBar percentile={selEst.percentileRaw} confidence={selEst.confidence} color={heat(pct100(selEst.percentileRaw))} height={9} />
+                  <PercentileBar percentile={selEst.peakScore} confidence={selEst.confidence} color={heat(pct100(selEst.peakScore))} height={9} />
                 </div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 13 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -266,7 +266,8 @@ function Legend() {
 function Composition({ comp }: { comp: NonNullable<ReturnType<typeof usePeak>["data"]["biometric"]>["latestComposition"] }) {
   const sys = usePeak().data.unitSystem;
   if (!comp || !comp.ffmi || !comp.bodyFatPct) return null;
-  const ffmiTier = comp.ffmiPercentile != null ? tierForPercentile(comp.ffmiPercentile) : null;
+  const ffmiPeak = peakScoreFromPercentile(comp.ffmiPercentile ?? null);
+  const ffmiTier = tierForScore(ffmiPeak);
   const band = comp.bandDefinition;
   const ideal = comp.derivedIdealWeight;
 
@@ -287,9 +288,9 @@ function Composition({ comp }: { comp: NonNullable<ReturnType<typeof usePeak>["d
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
           <span style={{ fontFamily: mono, fontSize: 26, fontWeight: 700, color: C.ink }}>{comp.ffmi.value.toFixed(1)}</span>
-          <span style={{ fontSize: 12, color: C.sub }}>kg/m² · {pctLabel(comp.ffmiPercentile ?? null)} percentile</span>
+          <span style={{ fontSize: 12, color: C.sub }}>kg/m² · {score100(ffmiPeak)}/100 · {pctLabel(comp.ffmiPercentile ?? null)} vs all</span>
         </div>
-        <PercentileBar percentile={comp.ffmiPercentile ?? null} confidence={comp.provenance.confidence} color={C.accent} height={9} />
+        <PercentileBar percentile={ffmiPeak} confidence={comp.provenance.confidence} color={C.accent} height={9} />
         <div style={{ fontSize: 12, color: C.sub, marginTop: 11, lineHeight: 1.5 }}>
           Lean mass relative to your height — Peak's muscularity signal. More muscle for your frame moves this up.
         </div>

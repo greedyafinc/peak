@@ -89,7 +89,7 @@ export function StartSheet() {
         onClick={() => s.set({ startOpen: false, logOpen: true })}
         style={{ width: "100%", fontSize: 13, fontWeight: 700, padding: "11px", borderRadius: radius.lg, cursor: "pointer", border: `1px solid ${C.line2}`, background: "transparent", color: C.sub }}
       >
-        Log a past session or cardio instead
+        Log a past session instead
       </button>
     </Sheet>
   );

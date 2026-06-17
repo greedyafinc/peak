@@ -7,6 +7,29 @@ import type { DimensionId, TierId } from "./types";
 
 // Canonical conventions #2 / #4 / Decision #6.
 export const PEAK_CAP = 0.95;
+
+// §2.6 — Peak Score anchors ("closeness to the ultimate you", NOT a percentile).
+//
+// The headline Peak Score answers a DIFFERENT question than the percentiles shown on
+// leaves/dimensions. Percentiles say "where you stand vs. the general population for your
+// build" and are left untouched. The Peak Score says "how close are you to YOUR trained
+// ceiling" — so an intermediate lifter who already beats most untrained adults (a high
+// percentile) is still only part-way to their potential, and should read mid-pack, not 90s.
+//
+// Mechanically: the population percentile is mapped into z-space (which un-compresses the
+// crowded top of the percentile scale — 90th and 99th are miles apart in capability but
+// adjacent in percentile), then measured as fractional progress from an out-of-shape FLOOR
+// to a realistic trained CEILING. `floorPctl` → Peak score 0, `ceilPctl` → Peak score 100.
+//
+// THESE TWO NUMBERS ARE THE HARSHNESS DIAL (OQ-13):
+//   • raise `ceilPctl` toward 1.0  → harder to reach 100 (a loftier "ultimate you")
+//   • raise `floorPctl`            → average efforts score lower (steeper bottom)
+// Current (harsh): 99.9th-percentile-for-your-build = "ultimate you" = 100; 30th = 0.
+// At this setting an intermediate (~90th) reads ~50, advanced (~98.5th) ~75, average (50th) ~15.
+export const PEAK_SCORE = {
+  floorPctl: 0.3, // build-relative percentile that maps to Peak score 0
+  ceilPctl: 0.999, // build-relative percentile that maps to Peak score 100 ("ultimate you")
+} as const;
 export const MODELS = {
   weights: "weights/1",
   correlation: "xdim/1",

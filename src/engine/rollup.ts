@@ -37,9 +37,10 @@ import {
   leavesForDimension,
   subcategoriesForDimension,
   leavesForSubcategory,
+  isDimensionEnabled,
   DIM_META,
 } from "../data/capabilityTree";
-import { effConf, tierForPercentile } from "./score";
+import { effConf, tierForPercentile, peakScoreFromPercentile } from "./score";
 
 export type Eligibility = Record<LeafId, boolean>;
 
@@ -47,6 +48,7 @@ export type Eligibility = Record<LeafId, boolean>;
 export type SubcategoryRollup = {
   subCategory: string;
   percentile: number | null; // effConf-weighted mean of capped leaf percentiles; null if none tested
+  peakScore: number | null; // effConf-weighted mean of per-leaf Peak Scores (closeness to ceiling)
   tier: TierId | null;
   coverage: number; // tested-eligible / eligible within this subcat
   testedLeaves: number;
@@ -59,6 +61,7 @@ export type DimensionRollup = {
   dimension: DimensionId;
   label: string;
   percentile: number | null; // mean of tested sub-category percentiles; null if none tested
+  peakScore: number | null; // mean of tested sub-category Peak Scores (closeness to ceiling)
   tier: TierId | null;
   coverage: number;
   testedLeaves: number;
@@ -75,9 +78,11 @@ function isTested(score: LeafScore | undefined): score is LeafScore {
 
 function isEligible(leafId: LeafId, eligibility: Eligibility): boolean {
   // Default: eligible unless explicitly opted out (false). Deferred leaves
-  // (agility at launch) are excluded from the coverage denominator.
+  // (agility at launch) and leaves of disabled dimensions (the product cut) are
+  // excluded from the coverage denominator and the headline counts.
   const leaf = LEAF_BY_ID[leafId];
-  if (leaf?.deferred) return false;
+  if (!leaf || leaf.deferred) return false;
+  if (!isDimensionEnabled(leaf.dimension)) return false;
   const e = eligibility[leafId];
   return e !== false;
 }
@@ -95,6 +100,7 @@ function rollupSubcategory(
   const leaves = leavesForSubcategory(subCat);
   let num = 0;
   let den = 0;
+  let psNum = 0; // Peak-Score (closeness-to-ceiling) accumulator, same effConf weights
   let tested = 0;
   let eligible = 0;
   let confSum = 0;
@@ -109,6 +115,8 @@ function rollupSubcategory(
     const w = effConf(s.confidence);
     num += w * capped;
     den += w;
+    // Peak Score transforms the UNCAPPED percentile so the ceiling is reachable (§2.6).
+    psNum += w * (peakScoreFromPercentile(s.percentileRaw) ?? 0);
     tested += 1;
     if (s.confidence != null) {
       confSum += s.confidence;
@@ -120,6 +128,7 @@ function rollupSubcategory(
   return {
     subCategory: subCat,
     percentile,
+    peakScore: den > 0 ? psNum / den : null,
     tier: percentile == null ? null : tierForPercentile(percentile),
     coverage: eligible > 0 ? tested / eligible : 0,
     testedLeaves: tested,
@@ -145,6 +154,10 @@ export function rollupDimension(
     testedSubs.length > 0
       ? testedSubs.reduce((a, s) => a + (s.percentile as number), 0) / testedSubs.length
       : null;
+  const peakScore =
+    testedSubs.length > 0
+      ? testedSubs.reduce((a, s) => a + (s.peakScore ?? 0), 0) / testedSubs.length
+      : null;
 
   let testedLeaves = 0;
   let eligibleLeaves = 0;
@@ -167,6 +180,7 @@ export function rollupDimension(
     dimension,
     label: DIM_META[dimension].label,
     percentile,
+    peakScore,
     tier: percentile == null ? null : tierForPercentile(percentile),
     coverage: eligibleLeaves > 0 ? testedLeaves / eligibleLeaves : 0,
     testedLeaves,
@@ -190,15 +204,17 @@ export function computeHeadline(
 ): { headline: Headline; dimensions: DimensionRollup[] } {
   const dimensions = PERFORMED_DIMENSIONS.map((d) => rollupDimension(d, scores, eligibility));
 
-  // Headline aggregate over performed dimensions that have a tested percentile.
+  // Headline Peak Score: the build-relative "closeness to the ultimate you" aggregate
+  // over performed dimensions, weighted by DIM_WEIGHT × effConf(dimension confidence).
+  // The CONF_FLOOR inside effConf prevents a cold-start dimension's low confidence from
+  // suppressing it. This is the per-leaf Peak Score (§2.6) rolled up — NOT the percentile
+  // aggregate (which stays on each dimension/leaf for the "where you stand" displays).
   let num = 0;
   let den = 0;
   for (const dim of dimensions) {
-    if (dim.percentile == null) continue;
-    // Weight by DIM_WEIGHT × effConf(dimension confidence). The CONF_FLOOR inside
-    // effConf prevents a cold-start dimension's low confidence from suppressing it.
+    if (dim.peakScore == null) continue;
     const w = dim.weight * effConf(dim.confidence);
-    num += w * dim.percentile;
+    num += w * dim.peakScore;
     den += w;
   }
   const peakScore = den > 0 ? num / den : null;
@@ -217,7 +233,9 @@ export function computeHeadline(
     if (isTested(s) && elig) {
       testedLeaves += 1;
       testedDims.add(leaf.dimension);
-      if ((s.percentileRaw as number) >= PEAK_CAP) peakBadges += 1;
+      // §2.6 — a Peak ★ is a capability at the top tier of its RATING (≈ your ceiling),
+      // consistent with the displayed Peak Score, not merely top-5% of the population.
+      if ((s.peakScore ?? peakScoreFromPercentile(s.percentileRaw) ?? 0) >= PEAK_CAP) peakBadges += 1;
     }
   }
 

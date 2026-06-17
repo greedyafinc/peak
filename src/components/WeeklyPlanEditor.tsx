@@ -9,9 +9,12 @@ import { C, mono, WORKOUT_THEME, radius } from "../theme";
 import { Sheet, Chip, PrimaryButton, inputStyle, fieldLabelStyle } from "./ui";
 import { BUILTIN_ROUTINES, ROUTINE_BY_ID } from "../data/routines";
 import { WEEKLY_TEMPLATES } from "../data/weeklyTemplates";
+import { ENABLED_WORKOUT_TYPES } from "../data/capabilityTree";
 import type { WeeklyPlanItem, WorkoutType } from "../types";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+// Non-Gym session types still offered when planning the week (product cut).
+const OTHER_PLAN_TYPES: WorkoutType[] = ENABLED_WORKOUT_TYPES.filter((t) => t !== "Gym");
 const blankWeek = (): WeeklyPlanItem[][] => [[], [], [], [], [], [], []];
 
 export function WeeklyPlanEditor() {
@@ -138,8 +141,10 @@ function AssignSheet({ dayName, onClose, onAdd }: {
   onAdd: (item: Omit<WeeklyPlanItem, "id">) => void;
 }) {
   const s = usePeak();
+  // Only show the Routine/Other tabs when non-Gym types are part of the cut.
+  const allowOther = OTHER_PLAN_TYPES.length > 0;
   const [tab, setTab] = useState<"routine" | "other">("routine");
-  const [otherType, setOtherType] = useState<WorkoutType>("Cardio");
+  const [otherType, setOtherType] = useState<WorkoutType>(OTHER_PLAN_TYPES[0] ?? "Cardio");
   const [title, setTitle] = useState("");
   const [detail, setDetail] = useState("");
 
@@ -151,12 +156,14 @@ function AssignSheet({ dayName, onClose, onAdd }: {
 
   return (
     <Sheet title={`Add to ${dayName}`} onClose={onClose}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <Chip active={tab === "routine"} onClick={() => setTab("routine")}>Routine</Chip>
-        <Chip active={tab === "other"} onClick={() => setTab("other")}>Run / Other</Chip>
-      </div>
+      {allowOther && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <Chip active={tab === "routine"} onClick={() => setTab("routine")}>Routine</Chip>
+          <Chip active={tab === "other"} onClick={() => setTab("other")}>Run / Other</Chip>
+        </div>
+      )}
 
-      {tab === "routine" ? (
+      {!allowOther || tab === "routine" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           {userRoutines.length > 0 && (
             <div style={{ fontSize: 10.5, color: C.muted, textTransform: "uppercase", letterSpacing: "0.8px" }}>Your routines</div>
@@ -173,7 +180,7 @@ function AssignSheet({ dayName, onClose, onAdd }: {
         <>
           <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Type</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-            {(["Cardio", "Sport", "Mobility"] as WorkoutType[]).map((t) => (
+            {OTHER_PLAN_TYPES.map((t) => (
               <Chip key={t} active={otherType === t} color={WORKOUT_THEME[t].color} onClick={() => setOtherType(t)}>{t}</Chip>
             ))}
           </div>

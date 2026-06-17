@@ -8,9 +8,10 @@ import { SCREEN_STYLE, contentPad } from "./layoutPresets";
 import { C, mono } from "../theme";
 import {
   Card, TierBadge, SectionTitle, SectionHeader, GhostButton,
-  SourceTag, PercentileBar, pctLabel,
+  SourceTag, PercentileBar, pctLabel, score100, tierForScore,
 } from "../components/ui";
-import { LEAF_BY_ID, DIM_META } from "../data/capabilityTree";
+import { peakScoreFromPercentile } from "../engine";
+import { LEAF_BY_ID, DIM_META, isLeafEnabled } from "../data/capabilityTree";
 import { BENCHMARK_BY_LEAF } from "../data/benchmarks";
 import type { LeafScore, Projection, GoalV3, MethodologyNote } from "../types";
 
@@ -30,7 +31,9 @@ export function Improve() {
   const { data } = s;
 
   const tested = useMemo(
-    () => Object.values(data.leafScores).filter((l): l is LeafScore => l.percentileRaw != null),
+    () => Object.values(data.leafScores).filter(
+      (l): l is LeafScore => l.percentileRaw != null && isLeafEnabled(l.leafId),
+    ),
     [data.leafScores],
   );
 
@@ -45,7 +48,7 @@ export function Improve() {
     return Object.keys(BENCHMARK_BY_LEAF)
       .filter((leafId) => {
         const leaf = LEAF_BY_ID[leafId];
-        if (!leaf || leaf.deferred) return false;
+        if (!leaf || leaf.deferred || !isLeafEnabled(leafId)) return false;
         const ls = data.leafScores[leafId];
         return !ls || ls.percentileRaw == null;
       })
@@ -83,15 +86,15 @@ export function Improve() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{leaf?.label ?? ls.leafId}</div>
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{dim?.label}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{dim?.label} · {pctLabel(ls.percentileRaw)} vs all</div>
                   </div>
-                  <TierBadge tier={ls.tier} small />
+                  <TierBadge tier={tierForScore(ls.peakScore)} small />
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 11 }}>
                   <div style={{ flex: 1 }}>
-                    <PercentileBar percentile={ls.percentileRaw} confidence={ls.confidence} color={dim?.color} height={8} />
+                    <PercentileBar percentile={ls.peakScore} confidence={ls.confidence} color={dim?.color} height={8} />
                   </div>
-                  <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: dim?.color ?? C.accent }}>{pctLabel(ls.percentileRaw)}</span>
+                  <span style={{ fontFamily: mono, fontSize: 15, fontWeight: 800, color: dim?.color ?? C.accent }}>{score100(ls.peakScore)}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 11, fontFamily: mono, color: pl.color }}>{pl.text}</span>
@@ -193,7 +196,7 @@ function GoalCard({ goal }: { goal: GoalV3 }) {
             <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
               {dim?.label}
               {targetLeaf && ` · ${targetLeaf.label}`}
-              {goal.target?.targetPercentileRaw != null && ` → ${pctLabel(goal.target.targetPercentileRaw)}`}
+              {goal.target?.targetPercentileRaw != null && ` → ${score100(peakScoreFromPercentile(goal.target.targetPercentileRaw))}/100`}
             </div>
           </div>
         </div>

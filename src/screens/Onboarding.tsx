@@ -7,7 +7,7 @@ import { usePeak, type OnboardInput } from "../store";
 import { SCREEN_STYLE, contentPad } from "./layoutPresets";
 import { BENCHMARKS, eventNeedsHours } from "../data/benchmarks";
 import { variantsForLeaf } from "../data/benchmarkVariants";
-import { LEAF_BY_ID, DIM_META } from "../data/capabilityTree";
+import { LEAF_BY_ID, DIM_META, isDimensionEnabled } from "../data/capabilityTree";
 import type { BenchmarkProtocol, LeafId, RawMeasurement, Sex } from "../types";
 import { buildRaw, valueField, type BenchEntry } from "../engine/benchmarkInput";
 import { C, mono, sans, radius } from "../theme";
@@ -35,7 +35,7 @@ type StepName = (typeof STEPS)[number];
 
 // Starter protocols (excluding derived composition leaves — those come from step 4).
 const STARTERS: BenchmarkProtocol[] = BENCHMARKS.filter(
-  (b) => b.starter && b.measure !== "composition",
+  (b) => b.starter && b.measure !== "composition" && isDimensionEnabled(b.dimension),
 );
 
 // Onboarding has a shorter bottom safe-area than the tabbed screens (no bottom

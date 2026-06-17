@@ -31,6 +31,7 @@ import {
   pctLabel,
   score100,
   tierColor,
+  tierForScore,
   tierLabel,
 } from "../components/ui";
 
@@ -68,7 +69,7 @@ export function Score() {
     () =>
       performed.map((d) => ({
         abbr: DIM_ABBR[d.dimension] ?? d.dimension.slice(0, 3).toUpperCase(),
-        val: pct100(d.percentile),
+        val: pct100(d.peakScore),
       })),
     [performed],
   );
@@ -206,7 +207,8 @@ function HeadlineHero({
         <div style={{ fontFamily: mono, fontSize: 15, color: C.muted, paddingBottom: 9 }}>/100</div>
       </div>
       <div style={{ fontSize: 13.5, color: C.sub, marginTop: 8, lineHeight: 1.4 }}>
-        How good you are across everything you've tested, for your build.
+        How close you are to the ultimate you — your trained ceiling for your build. Your
+        percentile vs. everyone is shown per capability below.
       </div>
       {cohortLabel && (
         <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginTop: 3, letterSpacing: "0.3px" }}>{cohortLabel}</div>
@@ -271,14 +273,18 @@ function PlacementHero({
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 14.5, fontWeight: 700, color: C.ink }}>{leaf?.label ?? ls.leafId}</div>
                       <div style={{ fontSize: 13, color: C.sub, marginTop: 3 }}>
-                        You're <span style={{ color: tierColor(ls.tier), fontWeight: 700 }}>{tierLabel(ls.tier)}</span> for your build
+                        You're <span style={{ color: tierColor(tierForScore(ls.peakScore)), fontWeight: 700 }}>{tierLabel(tierForScore(ls.peakScore))}</span> toward your peak
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontFamily: mono, fontSize: 22, fontWeight: 700, color: tierColor(ls.tier) }}>
-                        {pctLabel(ls.percentileRaw)}
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 3, justifyContent: "flex-end" }}>
+                        <span style={{ fontFamily: mono, fontSize: 22, fontWeight: 800, color: tierColor(tierForScore(ls.peakScore)) }}>
+                          {score100(ls.peakScore)}
+                        </span>
+                        <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>/100</span>
                       </div>
-                      <TierBadge tier={ls.tier} small />
+                      <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, margin: "1px 0 4px" }}>{pctLabel(ls.percentileRaw)} vs all</div>
+                      <TierBadge tier={tierForScore(ls.peakScore)} small />
                     </div>
                   </div>
                 </Card>
@@ -355,19 +361,19 @@ function DimensionRow({
             <span style={{ fontSize: 14.5, fontWeight: 700, color: C.ink }}>{dim.label}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}>
-            {tested && <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: col }}>{pctLabel(dim.percentile)}</span>}
-            <TierBadge tier={dim.tier} small />
+            {tested && <span style={{ fontFamily: mono, fontSize: 15, fontWeight: 800, color: col }}>{score100(dim.peakScore)}</span>}
+            <TierBadge tier={tierForScore(dim.peakScore)} small />
             <span style={{ color: C.muted, fontSize: 12, transform: expanded ? "rotate(90deg)" : "none", transition: "transform .2s" }}>›</span>
           </div>
         </div>
 
         <div style={{ marginTop: 11 }}>
-          <PercentileBar percentile={dim.percentile} confidence={dim.confidence} color={col} />
+          <PercentileBar percentile={dim.peakScore} confidence={dim.confidence} color={col} />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
           <span style={{ fontSize: 11, color: C.muted, fontFamily: mono }}>
-            {dim.testedLeaves}/{dim.eligibleLeaves} tested
+            {dim.testedLeaves}/{dim.eligibleLeaves} tested{tested ? ` · ${pctLabel(dim.percentile)} vs all` : ""}
           </span>
           {lowConf && (
             <span style={{ fontSize: 10.5, color: C.orange, fontWeight: 600 }}>low-confidence · thin norms</span>
@@ -405,8 +411,8 @@ function SubcategoryBlock({
         <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.6px" }}>
           {SUBCAT_LABEL[sub.subCategory] ?? sub.subCategory}
         </span>
-        {sub.percentile != null && (
-          <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>{pctLabel(sub.percentile)}</span>
+        {sub.peakScore != null && (
+          <span style={{ fontFamily: mono, fontSize: 11, color: tierColor(tierForScore(sub.peakScore)) }}>{score100(sub.peakScore)}</span>
         )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -492,14 +498,17 @@ function LeafRow({
           {score.isPeak && <span style={{ fontSize: 11, color: C.accent }}>★</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 700, color: tierColor(score.tier) }}>
-            {pctLabel(score.percentileRaw)}
+          <span style={{ fontFamily: mono, fontSize: 15, fontWeight: 800, color: tierColor(tierForScore(score.peakScore)) }}>
+            {score100(score.peakScore)}
           </span>
-          <TierBadge tier={score.tier} small />
+          <TierBadge tier={tierForScore(score.peakScore)} small />
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 7 }}>
-        <ConfidenceMeter confidence={score.confidence} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <ConfidenceMeter confidence={score.confidence} />
+          <span style={{ fontSize: 10.5, color: C.muted, fontFamily: mono }}>{pctLabel(score.percentileRaw)} vs all</span>
+        </div>
         {score.distributionSource && <SourceTag provenance={score.distributionSource} />}
       </div>
     </div>

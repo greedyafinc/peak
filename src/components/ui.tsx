@@ -40,6 +40,11 @@ export function score100(p: number | null): string {
   return p == null ? "—" : String(Math.round(p * 100));
 }
 
+/** Tier for a Peak Score / rating value [0,1] (null-safe; same bands as percentile, §2.3).
+ *  The app leads with the RATING, so badges/colors should band the rating, not the percentile. */
+export const tierForScore = (score: number | null | undefined): TierId | null =>
+  score == null ? null : tierFromPct(score);
+
 // ── Card ──────────────────────────────────────────────────────────────────────
 export function Card({ children, style, onClick, glow }: { children: ReactNode; style?: CSSProperties; onClick?: () => void; glow?: string }) {
   return (
