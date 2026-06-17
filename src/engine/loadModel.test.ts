@@ -8,7 +8,7 @@
 
 import { test, expect } from "bun:test";
 import { EXERCISE_BY_ID } from "../data/exercises";
-import { effectiveLoadKg, perArmFactor } from "../data/exerciseCatalog";
+import { effectiveLoadKg, perArmFactor, bodyweightLoadFactor } from "../data/exerciseCatalog";
 import { inferMuscleStrength } from "./infer";
 import type { BuildSnapshot, Session } from "../types";
 
@@ -40,6 +40,29 @@ test("barbell lifts are untouched", () => {
 test("two-handed single-implement moves load as a total (no doubling)", () => {
   expect(perArmFactor(ex("goblet-squat"))).toBe(1);
   expect(effectiveLoadKg(ex("goblet-squat"), 40)).toBe(40);
+});
+
+// ── unit: the bodyweight (calisthenics) load model ────────────────────────────
+test("a pull-up loads the full bodyweight; a push-up only its leverage fraction", () => {
+  expect(bodyweightLoadFactor(ex("pullup"))).toBe(1.0);
+  expect(bodyweightLoadFactor(ex("pushup"))).toBe(0.64);
+  // No external weight entered → load is bodyweight × the movement's leverage fraction.
+  expect(effectiveLoadKg(ex("pullup"), 0, 80)).toBeCloseTo(80, 6);     // 80 × 1.0
+  expect(effectiveLoadKg(ex("pushup"), 0, 80)).toBeCloseTo(51.2, 6);   // 80 × 0.64
+});
+
+test("a weighted pull-up adds the belt/vest load straight on top of bodyweight", () => {
+  expect(effectiveLoadKg(ex("pullup"), 10, 80)).toBeCloseTo(90, 6);    // 80 + 10
+});
+
+test("a bodyweight lift with unknown bodyweight only counts the added load", () => {
+  expect(effectiveLoadKg(ex("pullup"), 0, null)).toBe(0);              // can't score: skipped upstream
+  expect(effectiveLoadKg(ex("pullup"), 15, null)).toBe(15);           // belt load still counts
+});
+
+test("external lifts ignore the bodyweight argument entirely", () => {
+  expect(bodyweightLoadFactor(ex("barbell-bench-press"))).toBe(0);
+  expect(effectiveLoadKg(ex("barbell-bench-press"), 100, 80)).toBe(100);
 });
 
 // ── end-to-end: the reported symptom through the real inference pipeline ───────
@@ -98,4 +121,59 @@ test("an equivalent barbell bench and dumbbell bench land within a tier of each 
   expect(bb).not.toBeNull();
   expect(db).not.toBeNull();
   expect(Math.abs(bb! - db!)).toBeLessThan(0.1);
+});
+
+// ── end-to-end: calisthenics now feed inferred strength via the bodyweight load ──
+const build80: BuildSnapshot = { ...build, bodyweightKg: 80 };
+
+function bodyweightSession(exerciseId: string, addedKg: number | null, reps: number): Session {
+  return {
+    id: "bw1", seq: 1, createdAt: "2026-06-15T18:00:00.000Z", localDay: "2026-06-15",
+    type: "Gym", title: "calisthenics", build: build80, composition: null,
+    entries: [{
+      id: "e1", exerciseId,
+      sets: [{ id: "set1", seq: 1, weight: addedKg != null ? { value: addedKg, unit: "kg" } : null, reps, rpe: null, restSec: null, targetHit: null }],
+    }],
+  };
+}
+
+test("pull-up reps are scored on the bodyweight REP standard, not an invented 1RM", () => {
+  const asOf = "2026-06-15T19:00:00.000Z";
+  const at = (reps: number) => inferMuscleStrength([bodyweightSession("pullup", null, reps)], build80, asOf).lat?.percentileRaw ?? null;
+  const novice = at(5), intermediate = at(14), advanced = at(25);
+  // StrengthLevel community standard: 5 = novice, 14 = intermediate, 25 = advanced. Placed
+  // at general-population percentiles (calisthenics have a high zero-floor), monotonic, and
+  // NOWHERE near the old ~96th-for-5 that came from ranking an Epley 1RM on the barbell-row curve.
+  expect(novice).not.toBeNull();
+  expect(novice!).toBeGreaterThan(0.6);
+  expect(novice!).toBeLessThan(0.82);             // the fix: 5 pull-ups is above-average, not elite
+  expect(intermediate!).toBeGreaterThan(novice!);
+  expect(intermediate!).toBeGreaterThan(0.88);
+  expect(intermediate!).toBeLessThan(0.96);
+  expect(advanced!).toBeGreaterThan(intermediate!);
+  expect(advanced!).toBeLessThan(0.99);
+});
+
+test("a belt-loaded pull-up folds the plates in as equivalent reps and outscores bodyweight only", () => {
+  const asOf = "2026-06-15T19:00:00.000Z";
+  const plain = inferMuscleStrength([bodyweightSession("pullup", null, 6)], build80, asOf).lat?.percentileRaw ?? 0;
+  const loaded = inferMuscleStrength([bodyweightSession("pullup", 20, 6)], build80, asOf).lat?.percentileRaw ?? 0;
+  expect(loaded).toBeGreaterThan(plain);
+});
+
+test("dips are scored on their own (higher) rep standard — 8 dips ≈ novice, not elite chest", () => {
+  const asOf = "2026-06-15T19:00:00.000Z";
+  const chest = inferMuscleStrength([bodyweightSession("dip", null, 8)], build80, asOf).chest?.percentileRaw ?? null;
+  expect(chest).not.toBeNull();
+  expect(chest!).toBeGreaterThan(0.6);
+  expect(chest!).toBeLessThan(0.85);   // 8 dips = StrengthLevel novice; well short of the old inflated read
+});
+
+test("push-ups (a muscular-endurance move, no strength reference) never fabricate chest strength", () => {
+  const asOf = "2026-06-15T19:00:00.000Z";
+  // Honesty contract: an endurance movement with no §5.3 strength reference contributes
+  // nothing to inferred strength — chest stays untested rather than reading off a push-up.
+  const chest = inferMuscleStrength([bodyweightSession("pushup", null, 30)], build80, asOf).chest;
+  expect(chest?.percentileRaw ?? null).toBeNull();
+  expect(chest?.source).toBe("untested");
 });

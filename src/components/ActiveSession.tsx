@@ -9,7 +9,7 @@ import { C, mono, radius } from "../theme";
 import { inputStyle, cellInput, UnitToggle, StatTile, ExerciseHeader } from "./ui";
 import { ExercisePickerModal } from "./ExercisePickerModal";
 import { EXERCISE_BY_ID } from "../data/exercises";
-import { categoryOf, isPerArm, perArmFactor } from "../data/exerciseCatalog";
+import { categoryOf, isPerArm, perArmFactor, bodyweightLoadFactor } from "../data/exerciseCatalog";
 import { fmtClock, kgToDisplay, weightUnit } from "../units";
 import type { Session, UnitSystem } from "../types";
 import { Z_INDEX, TIMINGS } from "../constants/ui";
@@ -120,17 +120,25 @@ export function ActiveSession() {
 
   const elapsed = Math.max(0, Math.floor((now - new Date(a.startedAt).getTime()) / 1000));
 
+  // Bodyweight (display units) — the tonnage a calisthenics rep moves on top of any
+  // belt/vest plates. Null when the user hasn't given a bodyweight (then it's excluded).
+  const bwKg = s.data.biometric?.build.bodyweightKg ?? null;
+  const bwDisp = bwKg != null ? kgToDisplay(bwKg, sys, 1) : null;
+
   // Live stats from DONE sets (committed work).
   const stats = a.exercises.reduce(
     (acc, ex) => {
-      // Per-arm dumbbell/kettlebell work moves both implements — count the total tonnage.
       const exDef = EXERCISE_BY_ID[ex.exerciseId];
-      const armMult = exDef ? perArmFactor(exDef) : 1;
+      const isBw = exDef?.isBodyweight ?? false;
+      // Per-arm dumbbell/kettlebell work moves both implements — count the total tonnage.
+      const armMult = exDef && !isBw ? perArmFactor(exDef) : 1;
+      // Calisthenics move bodyweight×leverage each rep; the weight cell adds plates on top.
+      const bwBaseDisp = isBw && exDef && bwDisp != null ? bwDisp * bodyweightLoadFactor(exDef) : 0;
       for (const st of ex.sets) {
         acc.total += 1;
         if (st.done) {
           acc.done += 1;
-          acc.volume += numOf(st.weight) * armMult * Math.floor(numOf(st.reps));
+          acc.volume += (bwBaseDisp + numOf(st.weight) * armMult) * Math.floor(numOf(st.reps));
         }
       }
       return acc;
@@ -380,16 +388,34 @@ function ExerciseCard({
   const ex = EXERCISE_BY_ID[liEx.exerciseId];
   const prev = useMemo(() => lastPerformance(liEx.exerciseId, sessions), [liEx.exerciseId, sessions]);
   const wUnit = weightUnit(sys);
+  const isBw = ex?.isBodyweight ?? false;
   const perArm = ex ? isPerArm(ex) : false;
 
+  // For a bodyweight lift the weight cell is OPTIONAL added load (a belt/vest); a prior
+  // "weight" is that added load, shown with a leading "+". Otherwise it's the lifted load.
   const prevSummary = prev
-    ? prev.sets.map((p) => (p.wKg != null && p.wKg > 0 ? `${kgToDisplay(p.wKg, sys, 0)}×${p.reps}` : `${p.reps}`)).join(", ")
+    ? prev.sets
+        .map((p) =>
+          p.wKg != null && p.wKg > 0
+            ? `${isBw ? "+" : ""}${kgToDisplay(p.wKg, sys, 0)}×${p.reps}`
+            : `${p.reps}`,
+        )
+        .join(", ")
     : null;
+  const lastLabel = prevSummary
+    ? `Last · ${prevSummary}${isBw ? "" : ` ${wUnit}${perArm ? "/arm" : ""}`}`
+    : ex
+      ? (isBw ? "Bodyweight" : categoryOf(ex))
+      : "";
 
   // Ghost hint per row: prior set at that index (fallback to last prior set), else target.
+  // Bodyweight rows hint the optional added load ("+0" when none was used last time).
   const hintFor = (idx: number, st: LiveSet): { w: string; reps: string } => {
     const p = prev?.sets[idx] ?? prev?.sets[prev.sets.length - 1];
-    const w = p?.wKg != null && p.wKg > 0 ? String(kgToDisplay(p.wKg, sys, 0)) : "—";
+    const hasW = p?.wKg != null && p.wKg > 0;
+    const w = isBw
+      ? hasW ? `+${kgToDisplay(p!.wKg!, sys, 0)}` : "+0"
+      : hasW ? String(kgToDisplay(p!.wKg!, sys, 0)) : "—";
     const reps = p?.reps != null ? String(p.reps) : st.targetReps != null ? String(st.targetReps) : "0";
     return { w, reps };
   };
@@ -402,7 +428,8 @@ function ExerciseCard({
           <ExerciseHeader
             name={ex?.name ?? liEx.exerciseId}
             perArm={perArm}
-            subtitle={prevSummary ? `Last · ${prevSummary} ${wUnit}${perArm ? "/arm" : ""}` : ex ? categoryOf(ex) : ""}
+            bodyweight={isBw}
+            subtitle={lastLabel}
           />
         </div>
         <button onClick={onSwap} aria-label="Swap exercise"
@@ -413,10 +440,12 @@ function ExerciseCard({
           style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 19, lineHeight: 1, padding: "2px 2px" }}>×</button>
       </div>
 
-      {/* column header — the weight unit is a live kg·lb toggle (lbs always available) */}
+      {/* column header — the weight unit is a live kg·lb toggle (lbs always available).
+          A bodyweight lift loads the body itself, so its weight cell is OPTIONAL added load. */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, fontSize: 9.5, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>
         <span style={{ width: 26, textAlign: "center" }}>Set</span>
         <span style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+          {isBw && <span style={{ color: C.mint }}>＋ Add</span>}
           <UnitToggle kind="weight" />
           {perArm && <span style={{ color: C.blue }}>/ arm</span>}
         </span>

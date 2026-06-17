@@ -6,9 +6,16 @@
 // against the standard for a movement that actually trains it. This replaces the old
 // `est1RM × muscleWeights[g]` attribution against a single compound proxy, whose `frac`
 // only cancelled for bench→chest and read every isolation lift at the 99th percentile.
+// A pure-calisthenics movement with a published REP standard (pull-up, chin-up, dip) is a
+// special case: its standard is a rep count, not a load, so ranking an invented 1RM on the
+// barbell curve over-credits it (5 pull-ups read ~96th). Those are scored on REPS against a
+// bodyweight rep ladder, then mapped back onto the muscle's load scale (equal-percentile =
+// equal-z) so they combine with barbell work — see bwRepEquivalentLoad in strength.ts.
 // The pipeline:
-//   1. per-set est-1RM (Epley) on the barbell-equivalent load (effectiveLoadKg) for sets
-//      that carry a weight
+//   1. per-set est-1RM (Epley) on the barbell-equivalent load (effectiveLoadKg) — the
+//      entered external weight, or a bodyweight-derived load for calisthenics (pull-up ≈
+//      1×BW, dip ≈ 0.95×BW; belt/vest plates add on top). REP-standard movements instead
+//      contribute the load equivalent to their rep-standard percentile.
 //   2. attribute that est-1RM to the primary muscle of EACH reference the exercise maps to
 //      (a chin-up scores both lat and biceps) — on the reference's own load scale, no frac
 //   3. quality weight = clamp(0.5 + 0.05×(rpe−5), 0.5, 1.0); 0.7 if no rpe
@@ -30,7 +37,15 @@ import { INFER, MODELS } from "../constants";
 import { ALL_MUSCLES, LEAF_BY_ID } from "../data/capabilityTree";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { effectiveLoadKg } from "../data/exerciseCatalog";
-import { referencesForExercise, muscleForReference } from "../data/distributions/strength";
+import { representativeBodyweightKg } from "../data/distributions/nhanesAnthro";
+import {
+  referencesForExercise,
+  muscleForReference,
+  bwRepReferenceForExercise,
+  bwRepMuscle,
+  bwRepEquivalentLoad,
+  equivalentBodyweightReps,
+} from "../data/distributions/strength";
 import { est1RM, round1 } from "./math";
 import { buildCohort } from "./cohort";
 import { lookupCohortDist } from "../data/distributions";
@@ -56,6 +71,7 @@ type Contribution = {
   attributed: number; // est1RM × muscleWeight[g]
   weight: number; // quality × recency
   setId: string;
+  modeled: boolean; // load came from the bodyweight model (calisthenics), not an entered weight
 };
 
 /**
@@ -72,42 +88,61 @@ export function inferMuscleStrength(
   // Gather per-group contributions.
   const byGroup: Partial<Record<MuscleGroup, Contribution[]>> = {};
   const lastUpdatedByGroup: Partial<Record<MuscleGroup, string>> = {};
+  const cohort = buildCohort(build);
+
+  const touch = (g: MuscleGroup, c: Contribution, sessionAt: string) => {
+    (byGroup[g] ??= []).push(c);
+    const prev = lastUpdatedByGroup[g];
+    if (!prev || sessionAt > prev) lastUpdatedByGroup[g] = sessionAt;
+  };
 
   for (const session of sessions) {
     for (const entry of session.entries) {
       const exDef = EXERCISE_BY_ID[entry.exerciseId];
       if (!exDef) continue; // unknown exercise — cannot attribute
-      // The strength reference(s) this movement is scored against (§5.3). A muscle is
-      // inferred only from movements that actually train it; an exercise with no reference
-      // (pure cardio, untracked) contributes nothing to strength.
-      const refs = referencesForExercise(entry.exerciseId);
-      if (refs.length === 0) continue;
+      // A calisthenics movement with a published REP standard (pull-up, chin-up, dip) is
+      // scored on REPS, not an invented 1RM — see bwRepEquivalentLoad. Everything else uses
+      // its load reference(s) (§5.3): an exercise with neither contributes nothing.
+      const bwRepRef = bwRepReferenceForExercise(entry.exerciseId);
+      const refs = bwRepRef ? [] : referencesForExercise(entry.exerciseId);
+      if (!bwRepRef && refs.length === 0) continue;
+      // Calisthenics carry no external bar but DO load the body, so loaded movements are
+      // scored on a bodyweight-derived load (pull-up ≈ 1×BW, dip ≈ 0.95×BW). Bodyweight
+      // unknown → fall back to the cohort-representative weight so a calisthenics-only
+      // lifter is still scored (seed-anchored; per-set confidence reflects the chain).
+      const bwForLoad = exDef.isBodyweight
+        ? (build.bodyweightKg ?? representativeBodyweightKg(build.sex, build.heightCm))
+        : null;
       for (const set of entry.sets) {
-        // Only sets with an actual external weight produce an est-1RM (§4.3 step 1).
-        const w = set.weight?.value;
-        if (w == null || w <= 0) continue;
-        // Convert the ENTERED load (per-arm for dumbbell/kettlebell) to the barbell-
-        // equivalent scale the reference ladders are calibrated to, BEFORE Epley.
-        const est = est1RM(effectiveLoadKg(exDef, w), set.reps);
+        const added = set.weight?.value ?? 0;
         const daysAgo = daysBetween(set.derived?.[0]?.computedAt ?? session.createdAt, asOf);
         const recency = recencyFactor(daysAgo, INFER.recencyHalfLifeDays);
-        const quality = qualityWeight(set.rpe);
-        const w_set = quality * recency;
+        const w_set = qualityWeight(set.rpe) * recency;
 
+        if (bwRepRef) {
+          // Rank the REP count against the bodyweight rep standard, then map onto the
+          // muscle's load scale (equal-percentile = equal-z) so it combines with barbell
+          // work. Belt/vest plates fold in as equivalent extra reps.
+          if (set.reps <= 0) continue;
+          const effReps = equivalentBodyweightReps(set.reps, Math.max(0, added), bwForLoad);
+          const attributed = bwRepEquivalentLoad(bwRepRef, effReps, cohort);
+          touch(bwRepMuscle(bwRepRef), { attributed, weight: w_set, setId: set.id, modeled: true }, session.createdAt);
+          continue;
+        }
+
+        // External / non-rep load path: per-set est-1RM on the barbell-equivalent load.
+        const load = effectiveLoadKg(exDef, added, bwForLoad);
+        if (load <= 0) continue; // external lift with no weight, or unscorable bodyweight
+        const est = est1RM(load, set.reps);
         for (const refId of refs) {
           // Attribute the FULL est-1RM to the reference's primary muscle, on that
           // reference's own load scale (no muscleWeight frac — the dist is the reference's).
-          const g = muscleForReference(refId);
-          (byGroup[g] ??= []).push({ attributed: est, weight: w_set, setId: set.id });
-          // Track the most recent contributing session timestamp per group.
-          const prev = lastUpdatedByGroup[g];
-          if (!prev || session.createdAt > prev) lastUpdatedByGroup[g] = session.createdAt;
+          touch(muscleForReference(refId), { attributed: est, weight: w_set, setId: set.id, modeled: !!exDef.isBodyweight }, session.createdAt);
         }
       }
     }
   }
 
-  const cohort = buildCohort(build);
   const result: Partial<Record<MuscleGroup, MuscleGroupEstimate>> = {};
 
   for (const g of ALL_MUSCLES) {
@@ -168,9 +203,14 @@ export function inferMuscleStrength(
     const percentileRaw = percentileInGaussian(estStrength, dist);
     const normalized = percentileRaw; // beta: cohort Gaussian is the only normalizer
     const daysSinceLast = daysBetween(lastUpdatedByGroup[g] ?? asOf, asOf);
+    // A calisthenics-derived load is MODELED (bodyweight × leverage), not a number the
+    // user entered, so it's a softer measurement — the more of a group's top-K leans on
+    // bodyweight movements, the lower its measurement quality (widens the confidence band,
+    // never shifts the percentile). Fully external lifts keep the full 0.85.
+    const modeledShare = topK.filter((c) => c.modeled).length / topK.length;
     const confidence = leafConfidence(leaf, dist, {
       distributionDepth: distributionDepthOf(dist),
-      measurementQuality: 0.85, // logged_set quality (no direct benchmark anchor yet)
+      measurementQuality: 0.85 - 0.15 * modeledShare, // 0.85 external → 0.70 fully bodyweight-modeled
       recency: recencyFactor(daysSinceLast, leaf.staleAfterDays),
       inferenceChainLength: 0.8, // §2.4 — inferred-from-strength chain
     });

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { usePeak, type LogEntryInput, type LogSetInput } from "../../store";
 import { C, mono } from "../../theme";
 import {
-  Sheet, Field, Chip, PrimaryButton, GhostButton, UnitToggle, DurationInput, inputStyle, PerArmBadge,
+  Sheet, Field, Chip, PrimaryButton, GhostButton, UnitToggle, DurationInput, inputStyle, PerArmBadge, BodyweightBadge,
 } from "../ui";
 import { EXERCISE_BY_ID } from "../../data/exercises";
 import { isPerArm } from "../../data/exerciseCatalog";
@@ -127,19 +127,21 @@ export function LogSheet() {
             {entries.map((entry, ei) => {
               const ex = EXERCISE_BY_ID[entry.exerciseId];
               const perArm = ex ? isPerArm(ex) : false;
+              const isBw = ex?.isBodyweight ?? false;
               return (
                 <div key={ei} style={{ background: C.inner, border: `1px solid ${C.line2}`, borderRadius: 14, padding: 13 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{ex?.name ?? entry.exerciseId}</span>
                       {perArm && <PerArmBadge />}
+                      {isBw && <BodyweightBadge />}
                     </span>
                     <button onClick={() => removeEntry(ei)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, lineHeight: 1 }} aria-label="Remove exercise">×</button>
                   </div>
-                  {/* set header */}
+                  {/* set header — a bodyweight lift's weight column is OPTIONAL added load. */}
                   <div style={{ display: "flex", gap: 8, marginBottom: 6, fontSize: 9.5, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px", alignItems: "center" }}>
                     <span style={{ width: 18 }}>#</span>
-                    <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 3 }}><UnitToggle kind="weight" />{perArm && <span style={{ color: C.blue }}>/ arm</span>}</span>
+                    <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 3 }}>{isBw && <span style={{ color: C.mint }}>＋ Add</span>}<UnitToggle kind="weight" />{perArm && <span style={{ color: C.blue }}>/ arm</span>}</span>
                     <span style={{ flex: 1 }}>reps</span>
                     <span style={{ flex: 1 }}>rpe</span>
                     <span style={{ width: 24 }} />
@@ -147,7 +149,7 @@ export function LogSheet() {
                   {entry.sets.map((st, si) => (
                     <div key={si} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
                       <span style={{ width: 18, fontFamily: mono, fontSize: 12, color: C.muted }}>{si + 1}</span>
-                      <div style={{ flex: 1 }}><NumInput value={st.weight} onChange={(v) => setSetField(ei, si, "weight", v)} placeholder="—" step="0.5" /></div>
+                      <div style={{ flex: 1 }}><NumInput value={st.weight} onChange={(v) => setSetField(ei, si, "weight", v)} placeholder={isBw ? "+0" : "—"} step="0.5" /></div>
                       <div style={{ flex: 1 }}><NumInput value={st.reps} onChange={(v) => setSetField(ei, si, "reps", v)} placeholder="0" /></div>
                       <div style={{ flex: 1 }}><NumInput value={st.rpe} onChange={(v) => setSetField(ei, si, "rpe", v)} placeholder="–" /></div>
                       <button onClick={() => removeSet(ei, si)} style={{ width: 24, background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 16 }} aria-label="Remove set">−</button>

@@ -187,6 +187,113 @@ export function muscleForReference(refId: StrengthReferenceId): MuscleGroup {
   return REFERENCES[refId].primaryMuscle;
 }
 
+// ── Bodyweight REP standards (calisthenics) ──────────────────────────────────
+// A pull-up / chin-up / dip at bodyweight is a REP feat, not a load feat: its published
+// standard is "how many strict reps," not an estimated 1RM. Scoring it by converting reps
+// → est-1RM and ranking THAT on the barbell-row / -bench LOAD curve badly over-credits it —
+// a single bodyweight pull-up is far more common in the population than rowing your whole
+// bodyweight on a bar, yet both read as "1.0×BW = intermediate," so 5 pull-ups came out
+// ~96th. Instead we rank the REP COUNT against a rep ladder, then map that percentile back
+// onto the muscle's load scale (both ladders are log1p-Gaussian, so EQUAL PERCENTILE =
+// EQUAL Z — standardize the reps, read the load at the same z). A calisthenics-only lifter's
+// inferred muscle then equals the rep-standard percentile exactly, and it still combines
+// cleanly with any barbell work on the same leaf.
+//
+// Rep ladders: StrengthLevel community rep standards (millions of logged sets;
+// https://strengthlevel.com/strength-standards/pull-ups), placed at GENERAL-POPULATION
+// percentiles — calisthenics have a high zero-floor (most adults can't do many reps), so
+// even "novice" sits above the median but nowhere near elite (same §5.3 re-anchoring the
+// load ladders use). Female lower tiers (StrengthLevel novice <1) are approximated and
+// carry lower confidence.
+export type BwRepReferenceId = "pullup-reps" | "chinup-reps" | "dip-reps";
+
+type BwRepReference = {
+  primaryMuscle: MuscleGroup;
+  male: number[];    // [beginner, novice, intermediate, advanced, elite] strict reps
+  female: number[];
+  genPctl: number[]; // general-population percentile each rep tier occupies
+  confidence: number;
+  exercises: string[];
+};
+
+const BW_REP_REFERENCES: Record<BwRepReferenceId, BwRepReference> = {
+  // Male: novice 5 / int 14 / adv 25 / elite 37 reps (StrengthLevel, 4.8M lifts).
+  "pullup-reps": {
+    primaryMuscle: "lat",
+    male: [1, 5, 14, 25, 37], female: [1, 2, 6, 15, 26],
+    genPctl: [0.5, 0.7, 0.9, 0.975, 0.995], confidence: 0.5,
+    exercises: ["pullup"],
+  },
+  // Male: novice 6 / int 14 / adv 24 / elite 35 reps (StrengthLevel, 1.2M lifts).
+  "chinup-reps": {
+    primaryMuscle: "lat",
+    male: [1, 6, 14, 24, 35], female: [1, 2, 6, 13, 22],
+    genPctl: [0.5, 0.7, 0.9, 0.975, 0.995], confidence: 0.5,
+    exercises: ["chinup"],
+  },
+  // Male: novice 8 / int 20 / adv 34 / elite 49 reps (StrengthLevel, 2.1M lifts).
+  "dip-reps": {
+    primaryMuscle: "chest",
+    male: [1, 8, 20, 34, 49], female: [1, 2, 10, 22, 35],
+    genPctl: [0.45, 0.68, 0.88, 0.97, 0.994], confidence: 0.5,
+    exercises: ["dip"],
+  },
+};
+
+const EXERCISE_TO_BW_REP: Record<string, BwRepReferenceId> = (() => {
+  const m: Record<string, BwRepReferenceId> = {};
+  for (const [id, ref] of Object.entries(BW_REP_REFERENCES) as [BwRepReferenceId, BwRepReference][])
+    for (const ex of ref.exercises) m[ex] = id;
+  return m;
+})();
+
+/** The bodyweight-rep standard a calisthenics movement is scored against (null if none). */
+export function bwRepReferenceForExercise(exerciseId: string): BwRepReferenceId | null {
+  return EXERCISE_TO_BW_REP[exerciseId] ?? null;
+}
+
+/** The muscle a bodyweight-rep standard scores. */
+export function bwRepMuscle(refId: BwRepReferenceId): MuscleGroup {
+  return BW_REP_REFERENCES[refId].primaryMuscle;
+}
+
+/** Confidence basis for a bodyweight-rep standard (seed). */
+export function bwRepConfidence(refId: BwRepReferenceId): number {
+  return BW_REP_REFERENCES[refId].confidence;
+}
+
+/** Cohort rep distribution (mean/sd in log1p space) for a bodyweight-rep standard. */
+function bwRepDist(refId: BwRepReferenceId, cohort: Cohort): { mean: number; sd: number } {
+  const ref = BW_REP_REFERENCES[refId];
+  const tiers = sexKey(cohort.sex) === "female" ? ref.female : ref.male;
+  const fit = fitGaussianTiersLog1p(tiers, ref.genPctl, false);
+  // Rep capacity declines with age much like strength (multiplicative → additive in log).
+  const meanT = fit.mean + Math.log(strengthAgeFactor(cohort.ageYears));
+  return { mean: meanT, sd: Math.max(fit.sd, 0.3) };
+}
+
+/** Weighted calisthenics → equivalent bodyweight reps (Epley equivalence on the est-1RM).
+ *  Unweighted (or unknown bodyweight) → the rep count unchanged. Continuous at addedKg=0. */
+export function equivalentBodyweightReps(reps: number, addedKg: number, bodyweightKg: number | null): number {
+  if (bodyweightKg == null || bodyweightKg <= 0 || addedKg <= 0) return reps;
+  const ratio = (bodyweightKg + addedKg) / bodyweightKg;
+  return Math.max(0, 30 * (ratio * (1 + reps / 30) - 1));
+}
+
+/**
+ * Map a bodyweight REP performance to the equivalent LOAD on the muscle's strength
+ * reference, so calisthenics combine with barbell work on one scale. Both the rep ladder
+ * and the load ladder are log1p-Gaussian, so equal percentile = equal z: standardize the
+ * reps in rep-space, then read the load at that same z. Percentiling the returned load
+ * against the muscle's own leaf dist round-trips back to the rep-standard percentile.
+ */
+export function bwRepEquivalentLoad(refId: BwRepReferenceId, effReps: number, cohort: Cohort): number {
+  const rep = bwRepDist(refId, cohort);
+  const z = rep.sd > 0 ? (Math.log1p(Math.max(0, effReps)) - rep.mean) / rep.sd : 0;
+  const load = referenceDist(MUSCLE_TO_REF[bwRepMuscle(refId)], cohort); // mean/sd in log1p load-space
+  return Math.expm1(load.mean + load.sd * z);
+}
+
 /**
  * Cohort distribution (in LOG1P space) for a strength reference movement at the target
  * cohort. Strength in the general population is right-skewed and zero-floored — most adults

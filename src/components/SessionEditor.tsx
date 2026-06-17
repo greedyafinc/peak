@@ -307,13 +307,14 @@ function EditExerciseCard({
 }) {
   const def = EXERCISE_BY_ID[ex.exerciseId];
   const perArm = def ? isPerArm(def) : false;
+  const isBw = def?.isBodyweight ?? false;
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: radius.xl, padding: 14 }}>
       {/* header */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <ExerciseHeader name={def?.name ?? ex.exerciseId} perArm={perArm} />
+          <ExerciseHeader name={def?.name ?? ex.exerciseId} perArm={perArm} bodyweight={isBw} />
         </div>
         <button onClick={onSwap} aria-label="Swap exercise"
           style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 10px", borderRadius: 9, cursor: "pointer", border: `1px solid ${C.line2}`, background: C.inner, color: C.blue }}>
@@ -323,10 +324,10 @@ function EditExerciseCard({
           style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 19, lineHeight: 1, padding: "2px 2px" }}>×</button>
       </div>
 
-      {/* column header */}
+      {/* column header — a bodyweight lift's weight column is OPTIONAL added load. */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
         <span style={{ ...colLabel, width: 24 }}>Set</span>
-        <span style={{ ...colLabel, flex: 1.1 }}>{wUnit}{perArm ? " /arm" : ""}</span>
+        <span style={{ ...colLabel, flex: 1.1, color: isBw ? C.mint : undefined }}>{isBw ? `＋ ${wUnit}` : `${wUnit}${perArm ? " /arm" : ""}`}</span>
         <span style={{ ...colLabel, flex: 0.85 }}>Reps</span>
         <span style={{ ...colLabel, flex: 0.7 }}>RPE</span>
         <span style={{ width: 18 }} />
@@ -337,8 +338,8 @@ function EditExerciseCard({
         {ex.sets.map((st, i) => (
           <div key={st.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ width: 24, textAlign: "center", fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.sub }}>{i + 1}</span>
-            <input style={{ ...cellInput, flex: 1.1 }} type="number" inputMode="decimal" step="0.5" value={st.weight} placeholder="—"
-              onChange={(e) => onSetField(st.id, "weight", e.target.value)} aria-label={`Set ${i + 1} weight`} />
+            <input style={{ ...cellInput, flex: 1.1 }} type="number" inputMode="decimal" step="0.5" value={st.weight} placeholder={isBw ? "+0" : "—"}
+              onChange={(e) => onSetField(st.id, "weight", e.target.value)} aria-label={`Set ${i + 1} ${isBw ? "added weight" : "weight"}`} />
             <input style={{ ...cellInput, flex: 0.85 }} type="number" inputMode="numeric" value={st.reps} placeholder="0"
               onChange={(e) => onSetField(st.id, "reps", e.target.value)} aria-label={`Set ${i + 1} reps`} />
             <input style={{ ...cellInput, flex: 0.7 }} type="number" inputMode="decimal" step="0.5" value={st.rpe} placeholder="—"

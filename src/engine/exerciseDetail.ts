@@ -25,6 +25,7 @@ import {
   isPerArm,
   equipmentLabel,
   muscleLabel,
+  bodyweightBaseKg,
   type ExerciseCategory,
 } from "../data/exerciseCatalog";
 import { LEAF_BY_ID } from "../data/capabilityTree";
@@ -152,51 +153,69 @@ export function buildExerciseDetail(data: PeakData, spec: ExerciseDetailSpec): E
 }
 
 // ── Strength / lift detail ───────────────────────────────────────────────────
-type Effort = { at: Date; weightKg: number; reps: number; weighted: boolean };
+// `effKg` is the EFFECTIVE load an effort moved: the entered weight for an external
+// lift, or bodyweight×leverage (+ any belt/vest plates) for a calisthenics movement.
+// `addedKg` is the external add only (belt/vest), so the display can read "BW+10 × 8".
+type Effort = { at: Date; effKg: number; addedKg: number; reps: number; bodyweight: boolean };
 
 function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView | null {
   const ex = EXERCISE_BY_ID[exerciseId];
   if (!ex) return null;
   const sys = data.unitSystem;
+  const isBw = ex.isBodyweight ?? false;
   const perArm = isPerArm(ex);
   const armSuffix = perArm ? "/arm" : "";
+  const wUnit = weightUnit(sys);
 
-  // Per session, take the single best set of this exercise (heaviest est-1RM among
-  // loaded sets; else most reps for a bodyweight set). Oldest → newest.
+  // Per session, take the single best set of this exercise (heaviest effective-load
+  // est-1RM; else most reps when there's no scorable load). Oldest → newest. For a
+  // calisthenics lift the effective load is bodyweight×leverage (from that session's
+  // build) plus any added plates — so a pull-up reads as the ~bodyweight it really moves.
   const efforts: Effort[] = [];
   for (const sess of data.sessions) {
+    const bwKg = isBw ? (sess.build.bodyweightKg ?? data.biometric?.build.bodyweightKg ?? null) : null;
+    const bwBase = isBw ? bodyweightBaseKg(ex, bwKg) : 0;
     for (const entry of sess.entries) {
       if (entry.exerciseId !== exerciseId) continue;
-      const loadedSets = entry.sets.filter((st) => (st.weight?.value ?? 0) > 0);
-      if (loadedSets.length) {
-        const top = loadedSets.reduce((a, b) =>
-          est1RM(b.weight!.value, b.reps) > est1RM(a.weight!.value, a.reps) ? b : a);
-        efforts.push({ at: new Date(sess.createdAt), weightKg: top.weight!.value, reps: top.reps, weighted: true });
-      } else {
-        const repSets = entry.sets.filter((st) => st.reps > 0);
-        if (!repSets.length) continue;
-        const top = repSets.reduce((a, b) => (b.reps > a.reps ? b : a));
-        efforts.push({ at: new Date(sess.createdAt), weightKg: 0, reps: top.reps, weighted: false });
-      }
+      const repSets = entry.sets.filter((st) => st.reps > 0);
+      if (!repSets.length) continue;
+      const scored = repSets.map((st) => {
+        const added = st.weight?.value ?? 0;
+        const effKg = isBw ? bwBase + Math.max(0, added) : Math.max(0, added);
+        return { added, effKg, reps: st.reps };
+      });
+      const usable = scored.filter((x) => x.effKg > 0);
+      const top = usable.length
+        ? usable.reduce((a, b) => (est1RM(b.effKg, b.reps) > est1RM(a.effKg, a.reps) ? b : a))
+        : scored.reduce((a, b) => (b.reps > a.reps ? b : a));
+      efforts.push({ at: new Date(sess.createdAt), effKg: top.effKg, addedKg: top.added, reps: top.reps, bodyweight: isBw });
     }
   }
   if (efforts.length === 0) return null;
   efforts.sort((a, b) => a.at.getTime() - b.at.getTime());
 
-  const loaded = efforts.some((e) => e.weighted);
-  const metricOf = (e: Effort): number => (loaded ? est1RM(e.weightKg, e.reps) : e.reps);
+  // "Loaded" = we have a real load to est-1RM on (external weight, or a known-bodyweight
+  // calisthenics load). Then the metric is est-1RM; otherwise it falls back to rep count.
+  const loaded = efforts.some((e) => e.effKg > 0);
+  const metricOf = (e: Effort): number => (loaded ? est1RM(e.effKg, e.reps) : e.reps);
   const fmtMetric = (v: number): string => (loaded ? fmtWeight(v, sys, 0) : `${Math.round(v)} reps`);
 
-  // The metric series the chart/trend/projection ride on (loaded → loaded sets only).
-  const series = efforts.filter((e) => (loaded ? e.weighted : true));
+  // The metric series the chart/trend/projection ride on (loaded → scorable sets only).
+  const series = efforts.filter((e) => (loaded ? e.effKg > 0 : true));
   const cur = efforts[efforts.length - 1];
   const curMetric = series.length ? metricOf(series[series.length - 1]) : metricOf(cur);
 
-  // current top set (real load — keep the half-kg, never round it away)
-  const prValue = cur.weighted ? fmtWeight(cur.weightKg, sys, 1) : `${cur.reps} reps`;
-  const prMeta = cur.weighted
-    ? `× ${cur.reps}${armSuffix} · est. 1RM ${fmtWeight(est1RM(cur.weightKg, cur.reps), sys, 0)}`
-    : "bodyweight";
+  // current top set. A calisthenics lift reads as reps over its bodyweight load; an
+  // external lift keeps its entered load (half-kg preserved, never rounded away).
+  const addedLabel = cur.addedKg > 0 ? ` +${fmtWeight(cur.addedKg, sys, 0)}` : "";
+  const prValue = cur.bodyweight ? `${cur.reps} reps` : cur.effKg > 0 ? fmtWeight(cur.effKg, sys, 1) : `${cur.reps} reps`;
+  const prMeta = cur.bodyweight
+    ? cur.effKg > 0
+      ? `bodyweight${addedLabel} · ≈ ${fmtWeight(cur.effKg, sys, 0)} load · est. 1RM ${fmtWeight(est1RM(cur.effKg, cur.reps), sys, 0)}`
+      : "bodyweight"
+    : cur.effKg > 0
+      ? `× ${cur.reps}${armSuffix} · est. 1RM ${fmtWeight(est1RM(cur.effKg, cur.reps), sys, 0)}`
+      : "bodyweight";
 
   // projection (honest: only when ≥2 loaded points show a real upward slope)
   const proj = projectSeries(series.map((e) => ({ at: e.at, value: metricOf(e) })), false, fmtMetric, {
@@ -216,7 +235,7 @@ function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView 
   // past efforts with PR flags (a new lifetime-best metric, computed oldest → newest)
   let runningMax = -Infinity;
   const flagged = efforts.map((e) => {
-    const m = e.weighted || !loaded ? metricOf(e) : -Infinity;
+    const m = e.effKg > 0 || !loaded ? metricOf(e) : -Infinity;
     const pr = Number.isFinite(m) && m > runningMax;
     if (Number.isFinite(m)) runningMax = Math.max(runningMax, m);
     return { e, pr };
@@ -227,8 +246,12 @@ function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView 
     .slice(0, 6)
     .map(({ e, pr }) => ({
       date: shortDate(e.at),
-      main: e.weighted ? `${kgToDisplay(e.weightKg, sys, 1)} ${weightUnit(sys)}${armSuffix} × ${e.reps}` : `${e.reps} reps`,
-      sub: e.weighted ? `est. 1RM ${fmtWeight(est1RM(e.weightKg, e.reps), sys, 0)}` : "bodyweight",
+      main: e.bodyweight
+        ? `BW${e.addedKg > 0 ? `+${kgToDisplay(e.addedKg, sys, 0)}${wUnit}` : ""} × ${e.reps}`
+        : e.effKg > 0
+          ? `${kgToDisplay(e.effKg, sys, 1)} ${wUnit}${armSuffix} × ${e.reps}`
+          : `${e.reps} reps`,
+      sub: e.effKg > 0 ? `est. 1RM ${fmtWeight(est1RM(e.effKg, e.reps), sys, 0)}` : "bodyweight",
       pr,
     }));
 
@@ -241,12 +264,20 @@ function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView 
   // gentle tips
   const alts = alternativesFor(exerciseId, 4).slice(0, 2).map((a) => a.name);
   const tips: DetailTip[] = [];
-  if (cur.weighted) {
+  if (cur.bodyweight) {
+    tips.push({
+      kind: "load",
+      title: "Add a rep — or a little load",
+      body: cur.effKg > 0
+        ? `You're moving about ${fmtWeight(cur.effKg, sys, 0)} at bodyweight for ${cur.reps} reps. One more clean rep — or a small belt/vest load — is the simplest way forward.`
+        : `You're at ${cur.reps} clean reps. Adding a rep — or a little load with a belt or vest — is the simplest way to move this forward.`,
+    });
+  } else if (cur.effKg > 0) {
     const inc = perArm ? 2 : 2.5;
     tips.push({
       kind: "load",
       title: "Ready to add a little load",
-      body: `You handled ${fmtWeight(cur.weightKg, sys, 1)}${armSuffix} for ${cur.reps} reps. When it feels right, ${fmtWeight(cur.weightKg + inc, sys, 1)} is a natural next step.`,
+      body: `You handled ${fmtWeight(cur.effKg, sys, 1)}${armSuffix} for ${cur.reps} reps. When it feels right, ${fmtWeight(cur.effKg + inc, sys, 1)} is a natural next step.`,
     });
   } else {
     tips.push({

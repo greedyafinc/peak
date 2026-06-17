@@ -169,7 +169,9 @@ function ExerciseBlock({ ex, sys, onOpen }: { ex: SessionExerciseRow; sys: "metr
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: mono, fontSize: 12 }}>
             <span style={{ color: C.muted, width: 18 }}>{i + 1}</span>
             <span style={{ color: C.ink }}>
-              {set.weightKg != null && set.weightKg > 0 ? `${kgToDisplay(set.weightKg, sys, 1)}${wUnit}${ex.perArm ? "/arm" : ""} × ${set.reps}` : `${set.reps} reps`}
+              {set.bodyweight
+                ? (set.weightKg != null && set.weightKg > 0 ? `BW+${kgToDisplay(set.weightKg, sys, 1)}${wUnit} × ${set.reps}` : `BW × ${set.reps}`)
+                : (set.weightKg != null && set.weightKg > 0 ? `${kgToDisplay(set.weightKg, sys, 1)}${wUnit}${ex.perArm ? "/arm" : ""} × ${set.reps}` : `${set.reps} reps`)}
             </span>
             {set.rpe != null && <span style={{ color: C.orange }}>@{set.rpe}</span>}
             {set.est1RM != null && <span style={{ color: C.muted, marginLeft: "auto" }}>~{kgToDisplay(set.est1RM, sys, 0)}{wUnit} 1RM</span>}

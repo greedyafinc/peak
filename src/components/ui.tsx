@@ -257,18 +257,29 @@ export function PerArmBadge() {
   );
 }
 
-// ── Exercise header — name + optional "Per arm" badge + optional subtitle ─────
+// ── "Bodyweight" badge — flags a calisthenics lift (load is the body itself, weight
+//    cell is optional added plates). Mirrors PerArmBadge's style in the mint accent. ─
+export function BodyweightBadge() {
+  return (
+    <span style={{ fontFamily: mono, fontSize: 8.5, fontWeight: 700, letterSpacing: "0.4px", textTransform: "uppercase", color: C.mint, background: `${C.mint}1f`, padding: "1px 5px", borderRadius: radius.sm }}>
+      Bodyweight
+    </span>
+  );
+}
+
+// ── Exercise header — name + optional "Per arm" / "Bodyweight" badge + subtitle ──
 // The exercise-card title block the live session and the logged-session editor
-// share: the name (15px/700) and a Per-arm flag on one flex-wrap row, with an
+// share: the name (15px/700) and the load-type flags on one flex-wrap row, with an
 // optional muted subtitle line beneath. Renders the exact markup those sites
 // inlined, so it's a drop-in. (The Log sheet row and the session-detail block use
 // a materially different layout — span-wrapped / button-embedded — and keep theirs.)
-export function ExerciseHeader({ name, perArm, subtitle }: { name: string; perArm?: boolean; subtitle?: string }) {
+export function ExerciseHeader({ name, perArm, bodyweight, subtitle }: { name: string; perArm?: boolean; bodyweight?: boolean; subtitle?: string }) {
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{name}</span>
         {perArm && <PerArmBadge />}
+        {bodyweight && <BodyweightBadge />}
       </div>
       {subtitle != null && (
         <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>{subtitle}</div>
