@@ -9,7 +9,7 @@
 import { useMemo } from "react";
 import { usePeak } from "../store";
 import { C, mono, hexA, radius } from "../theme";
-import { pctLabel, CircleButton, SectionHead, StatCard, FullScreenOverlay } from "./ui";
+import { pctLabel, score100, CircleButton, SectionHead, StatCard, FullScreenOverlay } from "./ui";
 import { buildExerciseDetail, type DetailTip, type MuscleWorked } from "../engine/exerciseDetail";
 import type { ExerciseCategory } from "../data/exerciseCatalog";
 import { ProjectionChart, BellCurve, Sparkline } from "../viz/DetailCharts";
@@ -109,16 +109,18 @@ export function ExerciseDetail() {
             </StatCard>
             {view.percentile != null ? (
               <StatCard>
-                <div style={tinyLabel}>Percentile</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color, letterSpacing: "-0.5px", marginTop: 5, lineHeight: 1, fontFamily: mono }}>{pctLabel(view.percentile)}</div>
-                <div style={{ fontSize: 9.5, color: C.muted, marginTop: 3, lineHeight: 1.3, letterSpacing: "0.2px" }}>{view.percentileSub}</div>
+                <div style={tinyLabel}>Peak rating</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color, letterSpacing: "-0.5px", marginTop: 5, lineHeight: 1, fontFamily: mono }}>
+                  {score100(view.peakScore)}<span style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>/100</span>
+                </div>
+                <div style={{ fontSize: 9.5, color: C.muted, marginTop: 3, lineHeight: 1.3, letterSpacing: "0.2px" }}>{pctLabel(view.percentile)} pct · {view.percentileSub}</div>
                 <div style={{ marginTop: 4 }}>
                   <BellCurve pct={view.percentile} color={color} />
                 </div>
               </StatCard>
             ) : (
               <StatCard>
-                <div style={tinyLabel}>Percentile</div>
+                <div style={tinyLabel}>Peak rating</div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: C.muted, marginTop: 6, lineHeight: 1.3 }}>Not scored yet</div>
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 5, lineHeight: 1.4 }}>Log or benchmark more to rank this against your build.</div>
               </StatCard>

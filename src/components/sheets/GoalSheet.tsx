@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { usePeak } from "../../store";
 import { Sheet, Field, Chip, PrimaryButton, inputStyle } from "../ui";
-import { LEAF_BY_ID, DIMENSIONS } from "../../data/capabilityTree";
+import { LEAF_BY_ID, DIMENSIONS, isDimensionEnabled } from "../../data/capabilityTree";
 import type { DimensionId, LeafId } from "../../types";
 import { NumInput, num } from "./shared";
 
@@ -16,7 +16,7 @@ export function GoalSheet() {
 
   if (!s.goalOpen) return null;
 
-  const performed = DIMENSIONS.filter((d) => d.performed);
+  const performed = DIMENSIONS.filter((d) => d.performed && isDimensionEnabled(d.id));
   const leafOptions = Object.values(LEAF_BY_ID).filter((l) => l.dimension === dimension && !l.deferred);
 
   const close = () => {

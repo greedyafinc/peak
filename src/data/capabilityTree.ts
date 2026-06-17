@@ -4,7 +4,7 @@
 // its launch confidence ceiling (cold-start honesty, §5.3). Leaves are the only
 // level carrying a percentile; everything above is a rollup (§2.6).
 
-import type { CapabilityLeaf, DimensionId, DimensionMeta, MuscleGroup } from "../types";
+import type { CapabilityLeaf, DimensionId, DimensionMeta, LeafId, MuscleGroup, WorkoutType } from "../types";
 import { DIM_WEIGHT, STALE_DAYS } from "../constants";
 
 export const DIMENSIONS: DimensionMeta[] = [
@@ -23,6 +23,35 @@ export const DIMENSIONS: DimensionMeta[] = [
 export const DIM_META: Record<DimensionId, DimensionMeta> = Object.fromEntries(
   DIMENSIONS.map((d) => [d.id, d]),
 ) as Record<DimensionId, DimensionMeta>;
+
+// ── Product cut: active dimensions & workout types ───────────────────────────
+// THE reversible "gym/strength build" dial. Disabled dimensions are STORED AWAY,
+// not deleted — their leaves, distributions, benchmarks and scoring code all stay
+// intact; they're simply excluded from the headline, the Score tree/radar, the
+// benchmark + goal pickers, onboarding, and the Improve lists. Flip a flag back to
+// `true` to bring a whole dimension's surface back. (consistency is the streak/
+// momentum track — app-wide, never a cardio/sport capability — so it stays on.)
+export const DIMENSION_ENABLED: Record<DimensionId, boolean> = {
+  strength: true,
+  power: true,
+  muscular_endurance: true,
+  body_composition: true,
+  consistency: true,
+  aerobic: false,
+  anaerobic: false,
+  mobility: false,
+  balance: false,
+  agility: false,
+};
+
+export function isDimensionEnabled(dim: DimensionId): boolean {
+  return DIMENSION_ENABLED[dim] !== false;
+}
+
+// Workout types offered when logging a session / planning the week. Same dial:
+// the gym/strength build only logs Gym sessions. Add "Cardio"/"Sport"/"Mobility"
+// back here to re-enable those logging + weekly-plan surfaces.
+export const ENABLED_WORKOUT_TYPES: WorkoutType[] = ["Gym"];
 
 // Helper to keep leaf authoring terse.
 function leaf(l: Omit<CapabilityLeaf, "staleAfterDays"> & { staleAfterDays?: number }): CapabilityLeaf {
@@ -150,8 +179,17 @@ export const SUBCAT_LABEL: Record<string, string> = {
   "body_composition.lean": "Lean Mass", "body_composition.fat": "Leanness",
 };
 
-// Performed dimensions only (the 9 that roll into the headline; consistency excluded).
-export const PERFORMED_DIMENSIONS: DimensionId[] = DIMENSIONS.filter((d) => d.performed).map((d) => d.id);
+// True iff the leaf's dimension is part of the active product cut.
+export function isLeafEnabled(leafId: LeafId): boolean {
+  const leaf = LEAF_BY_ID[leafId];
+  return !!leaf && isDimensionEnabled(leaf.dimension);
+}
+
+// Performed AND enabled dimensions — the ones that roll into the headline
+// (consistency excluded as its own track; disabled dimensions stored away).
+export const PERFORMED_DIMENSIONS: DimensionId[] = DIMENSIONS
+  .filter((d) => d.performed && isDimensionEnabled(d.id))
+  .map((d) => d.id);
 
 export function leavesForDimension(dim: DimensionId): CapabilityLeaf[] {
   return LEAVES.filter((l) => l.dimension === dim);

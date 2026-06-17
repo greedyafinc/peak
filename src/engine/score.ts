@@ -26,10 +26,11 @@ import type {
   ScorePoint,
   TierId,
 } from "../types";
-import { PEAK_CAP, CONF_FLOOR, TIER_BANDS, STALE_DAYS } from "../constants";
+import { PEAK_CAP, PEAK_SCORE, CONF_FLOOR, TIER_BANDS, STALE_DAYS } from "../constants";
 import { LEAF_BY_ID } from "../data/capabilityTree";
 import { buildCohort } from "./cohort";
 import { lookupCohortDist } from "../data/distributions";
+import { invNormCdf } from "../data/distributions/_shared";
 
 // ── Math primitives ──────────────────────────────────────────────────────────
 
@@ -66,6 +67,31 @@ export function tierForPercentile(p: number): TierId {
 /** §2.3 — capped contribution value; null passes through (untested stays null). */
 export function cappedOf(p: number | null): number | null {
   return p === null ? null : Math.min(p, PEAK_CAP);
+}
+
+// ── Peak Score transform (§2.6) — percentile → "closeness to the ultimate you" ──
+// Anchors precomputed once from PEAK_SCORE (z of the floor/ceil percentiles).
+const PEAK_FLOOR_Z = invNormCdf(PEAK_SCORE.floorPctl);
+const PEAK_CEIL_Z = invNormCdf(PEAK_SCORE.ceilPctl);
+const PEAK_SCORE_SPAN = PEAK_CEIL_Z - PEAK_FLOOR_Z;
+
+/**
+ * §2.6 — map a build-relative population PERCENTILE to a Peak Score in [0,1]
+ * ("how close are you to your trained ceiling"), or null for untested.
+ *
+ * This is deliberately NOT the percentile itself. Percentiles are crowded at the top —
+ * 90th and 99th are adjacent there but represent a large capability gap — so reporting
+ * the percentile as the headline made ordinary-but-above-average efforts read near the
+ * ceiling. We instead convert to z (un-compressing the tail) and take fractional progress
+ * from PEAK_SCORE.floorPctl (→0) to PEAK_SCORE.ceilPctl (→1, the "ultimate you").
+ *
+ * Use the UNCAPPED percentile here (the cap exists to reward breadth in the percentile
+ * rollup; the Peak Score's ceiling is governed by ceilPctl instead). PURE.
+ */
+export function peakScoreFromPercentile(percentile: number | null): number | null {
+  if (percentile == null) return null;
+  const z = invNormCdf(clamp(percentile, 0.001, 0.999));
+  return clamp((z - PEAK_FLOOR_Z) / PEAK_SCORE_SPAN, 0, 1);
 }
 
 // ── Step 2: empirical percentile in the cohort Gaussian (§2.2) ─────────────────
@@ -251,6 +277,7 @@ export function scoreLeafRaw(
       normalizerVersion: leaf?.normalizer.version,
       percentileRaw: null,
       cappedPercentile: null,
+      peakScore: null,
       tier: null,
       isPeak: false,
       buildSnapshot: build,
@@ -268,8 +295,11 @@ export function scoreLeafRaw(
   const normalized = normalizedOf(rawValue, dist);
   const percentileRaw = percentileInGaussian(rawValue, dist);
   const cappedPercentile = Math.min(percentileRaw, PEAK_CAP);
+  const peakScore = peakScoreFromPercentile(percentileRaw);
   const tier = tierForPercentile(percentileRaw);
-  const isPeak = percentileRaw >= PEAK_CAP;
+  // §2.6 — a "Peak" capability ★ now means you've reached the top tier of your RATING
+  // (≈ at your trained ceiling), consistent with the displayed Peak Score, not just top-5%.
+  const isPeak = (peakScore ?? 0) >= PEAK_CAP;
 
   const confidence = leafConfidence(leaf, dist, {
     distributionDepth: distributionDepthOf(dist),
@@ -292,6 +322,7 @@ export function scoreLeafRaw(
     normalizerVersion: leaf.normalizer.version,
     percentileRaw,
     cappedPercentile,
+    peakScore,
     tier,
     isPeak,
     buildSnapshot: build,

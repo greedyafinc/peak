@@ -13,6 +13,7 @@
 
 import type { PeakData, MuscleGroup, MuscleRegion, ExerciseDef } from "../types";
 import { est1RM } from "./math";
+import { peakScoreFromPercentile } from "./score";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import {
   groupHasSubRegions,
@@ -114,6 +115,7 @@ export type ExerciseDetailView = {
   prMeta: string;
 
   percentile: number | null;       // [0,1]; null = not scored yet (honest)
+  peakScore: number | null;        // [0,1] §2.6 closeness to your ceiling (the displayed RATING)
   percentileSub: string;
 
   trend: { abs: string; pct: string | null; window: string; dir: "up" | "flat" | "down" } | null;
@@ -310,6 +312,7 @@ function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView 
     prValue,
     prMeta,
     percentile: pctl?.value ?? null,
+    peakScore: peakScoreFromPercentile(pctl?.value ?? null),
     percentileSub: pctl?.sub ?? "vs your build",
     trend,
     spark: series.length >= 2 ? series.map((e) => metricOf(e)) : null,
@@ -425,6 +428,7 @@ function cardioDetail(data: PeakData, spec: { sessionId: string; cardioId: strin
     prValue,
     prMeta,
     percentile,
+    peakScore: peakScoreFromPercentile(percentile),
     percentileSub: "vs runners your age",
     trend,
     spark: runs.length >= 2 ? runs.map((r) => r.pace) : null,

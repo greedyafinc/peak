@@ -16,7 +16,6 @@ export type WeeklyTemplate = {
 };
 
 const G = (routineId: string, title: string): TemplateItem => ({ type: "Gym", routineId, title });
-const RUN = (title: string, detail?: string): TemplateItem => ({ type: "Cardio", title, detail });
 const REST: TemplateItem[] = [];
 
 export const WEEKLY_TEMPLATES: WeeklyTemplate[] = [
@@ -59,20 +58,6 @@ export const WEEKLY_TEMPLATES: WeeklyTemplate[] = [
       REST,
       [G("routine.fullbody", "Full Body")],
       REST,
-      REST,
-    ],
-  },
-  {
-    id: "runner-hybrid",
-    name: "Runner Hybrid",
-    blurb: "Lift twice, run three times.",
-    days: [
-      [G("routine.upper", "Upper Body")],
-      [RUN("Run · Easy", "Zone 2 · 35 min")],
-      [G("routine.lower", "Lower Body")],
-      [RUN("Run · Intervals", "6 × 400m")],
-      REST,
-      [RUN("Run · Long", "Easy · 60 min")],
       REST,
     ],
   },

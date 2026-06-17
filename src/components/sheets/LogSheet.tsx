@@ -9,11 +9,13 @@ import {
 import { EXERCISE_BY_ID } from "../../data/exercises";
 import { isPerArm } from "../../data/exerciseCatalog";
 import { ExercisePickerModal } from "../ExercisePickerModal";
+import { ENABLED_WORKOUT_TYPES } from "../../data/capabilityTree";
 import type { WorkoutType } from "../../types";
 import { distanceToKm, distanceUnit, paceLabel, weightToKg } from "../../units";
 import { NumInput, num } from "./shared";
 
-const WORKOUT_TYPES: WorkoutType[] = ["Gym", "Cardio", "Sport", "Mobility"];
+// Active product cut: which session types can be logged (see capabilityTree).
+const WORKOUT_TYPES: WorkoutType[] = ENABLED_WORKOUT_TYPES;
 
 type DraftSet = { weight: string; reps: string; rpe: string };
 type DraftEntry = { exerciseId: string; sets: DraftSet[] };
@@ -87,13 +89,15 @@ export function LogSheet() {
 
   return (
     <Sheet title="Log a session" onClose={close}>
-      <Field label="Type">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {WORKOUT_TYPES.map((t) => (
-            <Chip key={t} active={type === t} onClick={() => setType(t)}>{t}</Chip>
-          ))}
-        </div>
-      </Field>
+      {WORKOUT_TYPES.length > 1 && (
+        <Field label="Type">
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {WORKOUT_TYPES.map((t) => (
+              <Chip key={t} active={type === t} onClick={() => setType(t)}>{t}</Chip>
+            ))}
+          </div>
+        </Field>
+      )}
 
       <Field label="Title">
         <input value={title} placeholder={`${type} Session`} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />

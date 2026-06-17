@@ -451,6 +451,7 @@ export type LeafScore = {
   normalizerVersion?: string;
   percentileRaw: number | null;   // UNCAPPED canonical; null = untested
   cappedPercentile: number | null;
+  peakScore: number | null;       // [0,1] §2.6 closeness to your trained ceiling (the displayed RATING); null = untested
   tier: TierId | null;
   isPeak?: boolean;
   // CONTEXT / TRUST
@@ -473,6 +474,7 @@ export type MuscleGroupEstimate = {
   normalizedValue: number | null;
   percentileRaw: number | null;
   cappedPercentile: number | null;
+  peakScore: number | null;       // [0,1] §2.6 closeness to your trained ceiling (the displayed RATING)
   tier: TierId | null;
   inferenceModel: string;         // "infer/1"
   source: ProvenanceSource;
@@ -508,7 +510,7 @@ export type RecalibrationEvent = {
 
 // ── Headline rollup output (§2.6) ────────────────────────────────────────────
 export type Headline = {
-  peakScore: number | null;       // [0,1] — null until MIN_HEADLINE_LEAVES met
+  peakScore: number | null;       // [0,1] closeness to your trained ceiling (§2.6, NOT a percentile); null until MIN_HEADLINE_LEAVES met
   coverage: number;               // [0,1]
   peakBadges: number;
   rendered: boolean;
