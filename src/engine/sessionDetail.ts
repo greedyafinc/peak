@@ -10,13 +10,14 @@
 import type { PeakData, MuscleGroup, WorkoutType } from "../types";
 import { est1RM } from "./math";
 import { EXERCISE_BY_ID } from "../data/exercises";
-import { isPerArm, perArmFactor, muscleLabel } from "../data/exerciseCatalog";
+import { isPerArm, perArmFactor, muscleLabel, bodyweightBaseKg } from "../data/exerciseCatalog";
 
 export type SessionSetRow = {
-  weightKg: number | null;
+  weightKg: number | null;   // ENTERED external load; for a bodyweight set this is added plates (null = none)
   reps: number;
   rpe: number | null;
-  est1RM: number | null;
+  est1RM: number | null;     // est-1RM of the effective load (bodyweight base + added, for calisthenics)
+  bodyweight: boolean;       // a calisthenics set — its load is bodyweight-derived, not the bar
 };
 
 export type SessionExerciseRow = {
@@ -94,22 +95,31 @@ export function buildSessionSummary(data: PeakData, sessionId: string): SessionS
     const def = EXERCISE_BY_ID[entry.exerciseId];
     const perArm = def ? isPerArm(def) : false;
     const armMult = def ? perArmFactor(def) : 1;
+    const isBw = def?.isBodyweight ?? false;
+    // Calisthenics load = bodyweight × leverage (from the session's own build snapshot)
+    // plus any belt/vest plates. Bodyweight unknown → base 0 (falls back to reps).
+    const bwBase = def ? bodyweightBaseKg(def, session.build.bodyweightKg) : 0;
     let volumeKg = 0;
     let totalReps = 0;
     let best1RM: number | null = null;
     let topSetKg: number | null = null;
     let topSetReps: number | null = null;
     const sets: SessionSetRow[] = entry.sets.map((st) => {
-      const wKg = st.weight?.value ?? null;
-      const e1 = wKg != null && wKg > 0 ? est1RM(wKg, st.reps) : null;
+      const addedKg = st.weight?.value ?? null;
+      // Effective load (kg): bodyweight base + added plates for calisthenics, else the
+      // raw entered weight (per-implement — matches how it was logged). Volume tonnage
+      // uses the per-arm total; the est-1RM rides the effective load.
+      const eff = isBw ? bwBase + (addedKg ?? 0) : addedKg ?? 0;
+      const e1 = eff > 0 ? est1RM(eff, st.reps) : null;
+      const movedPerRep = isBw ? eff : eff * armMult;
       totalReps += st.reps;
-      if (wKg != null && wKg > 0) volumeKg += wKg * armMult * st.reps;
+      volumeKg += movedPerRep * st.reps;
       if (e1 != null && (best1RM == null || e1 > best1RM)) {
         best1RM = e1;
-        topSetKg = wKg;
+        topSetKg = eff;
         topSetReps = st.reps;
       }
-      return { weightKg: wKg, reps: st.reps, rpe: st.rpe ?? null, est1RM: e1 };
+      return { weightKg: addedKg, reps: st.reps, rpe: st.rpe ?? null, est1RM: e1, bodyweight: isBw };
     });
     return {
       entryId: entry.id,

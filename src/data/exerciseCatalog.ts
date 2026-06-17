@@ -5,7 +5,7 @@
 // (e.g. Barbell Bench Press → Dumbbell Bench, Incline, Machine Chest Press…) that
 // reads movement pattern + muscle overlap straight off the catalog — no new data.
 
-import type { ExerciseDef, MuscleGroup } from "../types";
+import type { ExerciseDef, MovementPattern, MuscleGroup } from "../types";
 import { EXERCISES, EXERCISE_BY_ID } from "./exercises";
 import { MUSCLE_TO_SVG } from "./muscleMap";
 
@@ -153,9 +153,70 @@ function loadEquivFactor(ex: ExerciseDef): number {
   return 1; // rows, curls, raises, carries — no established barbell-equivalent uplift
 }
 
-/** Barbell-equivalent load (kg) for percentiling against the strength cohort curves. */
-export function effectiveLoadKg(ex: ExerciseDef, enteredKg: number): number {
+// ── Bodyweight loading (calisthenics) ─────────────────────────────────────────
+// A bodyweight movement carries no external bar — its RESISTANCE is a fraction of
+// the user's own bodyweight, set by leverage: a pull-up/chin-up hauls ~all of it, a
+// dip ~95%, a standard push-up only ~64% (the hands bear part of the torso), a bench
+// dip far less. That fraction × the user's bodyweight is the load the movement
+// actually trains with. Any belt/vest plates are ADDED on top — entered in the same
+// weight cell, which for a bodyweight exercise means "+ added" (null = none).
+//
+// These fractions are biomechanically grounded (published push-up/pull-up load
+// studies), NOT measured per-user. Pure-cardio bodyweight work (run, cycle, jump-rope)
+// carries no strength load and is never scored against a strength reference (§5.3), so
+// its factor is moot. Anything bodyweight without an explicit entry falls back to a
+// movement-pattern default.
+const BW_LOAD_FACTOR: Record<string, number> = {
+  pullup: 1.0, chinup: 1.0, "inverted-row": 0.6, "dead-hang": 1.0,
+  dip: 0.95, "bench-dip": 0.4,
+  pushup: 0.64, "close-grip-pushup": 0.66, "diamond-pushup": 0.66, "pike-pushup": 0.72,
+  "pistol-squat": 0.85, "sissy-squat": 0.7, "cossack-squat": 0.55, "lateral-lunge": 0.5,
+  "glute-bridge": 0.45, "single-leg-hip-thrust": 0.55, "frog-pump": 0.4,
+  "nordic-curl": 0.6, "glute-ham-raise": 0.55, "back-extension": 0.5,
+  "hanging-leg-raise": 0.5, "toes-to-bar": 0.5, "hanging-knee-raise": 0.35,
+  "captains-chair-knee-raise": 0.35, "l-sit": 0.5, "dragon-flag": 0.6, "v-up": 0.4,
+  "ab-wheel-rollout": 0.55, "decline-situp": 0.4, "oblique-crunch": 0.3, "pallof-press": 0.25,
+};
+
+// Movement-pattern default fraction when an id has no explicit BW_LOAD_FACTOR entry.
+const BW_PATTERN_DEFAULT: Partial<Record<MovementPattern, number>> = {
+  vertical_pull: 1.0, horizontal_pull: 0.6,
+  horizontal_push: 0.64, vertical_push: 0.7,
+  squat: 0.6, lunge: 0.55, hinge: 0.5, isometric: 0.45, isolation: 0.4,
+};
+
+/** Fraction of bodyweight a calisthenics movement resists with (0 if not bodyweight). */
+export function bodyweightLoadFactor(ex: ExerciseDef): number {
+  if (!ex.isBodyweight) return 0;
+  return BW_LOAD_FACTOR[ex.id] ?? BW_PATTERN_DEFAULT[ex.movementPattern] ?? 0.5;
+}
+
+/** The bodyweight portion (kg) of a calisthenics set's load; 0 when not bodyweight or bw unknown. */
+export function bodyweightBaseKg(ex: ExerciseDef, bodyweightKg: number | null | undefined): number {
+  if (!ex.isBodyweight || bodyweightKg == null || bodyweightKg <= 0) return 0;
+  return bodyweightKg * bodyweightLoadFactor(ex);
+}
+
+/**
+ * Barbell-equivalent load (kg) for percentiling against the strength cohort curves.
+ * Calisthenics: bodyweight×leverage is the base, any belt/vest plates add straight on
+ * top — no per-arm doubling or barbell uplift (the leverage fraction already sets the
+ * scale). External lifts: per-arm doubling × the free-implement→barbell uplift.
+ * `bodyweightKg` is only consulted for bodyweight movements (pass the lifter's weight).
+ */
+export function effectiveLoadKg(ex: ExerciseDef, enteredKg: number, bodyweightKg?: number | null): number {
+  if (ex.isBodyweight) return bodyweightBaseKg(ex, bodyweightKg) + Math.max(0, enteredKg);
   return enteredKg * perArmFactor(ex) * loadEquivFactor(ex);
+}
+
+/**
+ * Literal load moved by one set (kg) for VOLUME / tonnage — per-arm doubling and the
+ * bodyweight base, but NO barbell-equivalent uplift (that's a scoring-scale fiction, not
+ * real iron). Used by the live-session and logged-session volume tallies.
+ */
+export function movedLoadKg(ex: ExerciseDef, enteredKg: number, bodyweightKg?: number | null): number {
+  if (ex.isBodyweight) return bodyweightBaseKg(ex, bodyweightKg) + Math.max(0, enteredKg);
+  return Math.max(0, enteredKg) * perArmFactor(ex);
 }
 
 /** "Barbell · Chest" / "Dumbbell · Chest · per arm" subtitle for a picker row. */

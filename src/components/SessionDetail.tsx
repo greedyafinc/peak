@@ -9,6 +9,7 @@ import { usePeak } from "../store";
 import { C, mono, WORKOUT_THEME, radius } from "../theme";
 import { CircleButton, SectionHead, StatTile, PerArmBadge, FullScreenOverlay } from "./ui";
 import { EllipsisMenu } from "./SessionMenu";
+import { ExerciseBodyMap, type BodyMapMuscle } from "../viz/ExerciseBodyMap";
 import { buildSessionSummary, type SessionExerciseRow, type SessionCardioRow } from "../engine/sessionDetail";
 import { fmtClock, fmtDistanceKm, kgToDisplay, kmToDisplay, weightUnit, paceLabel, distanceUnit } from "../units";
 import { Z_INDEX } from "../constants/ui";
@@ -18,6 +19,13 @@ export function SessionDetail() {
   const id = s.sessionDetailId;
   const sys = s.data.unitSystem;
   const view = useMemo(() => (id ? buildSessionSummary(s.data, id) : null), [id, s.data]);
+  // Session emphasis → body-map heat: the dominant muscles (≥ half the heaviest
+  // group's share) glow as "primary"; the map fades the rest by their share.
+  const heatMuscles: BodyMapMuscle[] = useMemo(() => {
+    if (!view || view.muscles.length === 0) return [];
+    const max = Math.max(...view.muscles.map((m) => m.share), 1e-4);
+    return view.muscles.map((m) => ({ group: m.group, share: m.share, primary: m.share >= 0.5 * max }));
+  }, [view]);
   if (!id) return null;
 
   const close = () => s.set({ sessionDetailId: null });
@@ -82,6 +90,32 @@ export function SessionDetail() {
             </div>
           )}
 
+          {/* MUSCLES WORKED — body heat map + per-group emphasis, combined */}
+          {view.muscles.length > 0 && (
+            <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: radius.xl, padding: "14px 15px", marginTop: 12 }}>
+              <ExerciseBodyMap muscles={heatMuscles} color={color} />
+              <div style={{ borderTop: `1px solid ${C.line3}`, marginTop: 13, paddingTop: 14 }}>
+                {view.muscles.slice(0, 8).map((m) => {
+                  const pct = Math.round(m.share * 100);
+                  return (
+                    <div key={m.group} style={{ marginBottom: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: C.ink2 }}>{m.label}</span>
+                        <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: C.ink3 }}>{pct}%</span>
+                      </div>
+                      <div style={{ height: 7, borderRadius: radius.sm, background: C.inner, overflow: "hidden" }}>
+                        <div style={{ width: `${Math.max(2, m.share * 100)}%`, height: "100%", background: color, opacity: 0.78 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+                  Estimated emphasis across this session's work — the same attribution Peak uses to infer your strength.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* EXERCISES */}
           {view.exercises.length > 0 && (
             <>
@@ -102,32 +136,6 @@ export function SessionDetail() {
                 {view.cardio.map((c) => (
                   <CardioBlock key={c.cardioId} c={c} sys={sys} onOpen={() => s.set({ exDetail: { kind: "cardio", sessionId: id, cardioId: c.cardioId } })} />
                 ))}
-              </div>
-            </>
-          )}
-
-          {/* MUSCLES WORKED */}
-          {view.muscles.length > 0 && (
-            <>
-              <SectionHead title="Muscles worked" right="emphasis" />
-              <div style={{ background: C.card, border: `1px solid ${C.line3}`, borderRadius: radius.xl, padding: "13px 15px" }}>
-                {view.muscles.slice(0, 8).map((m) => {
-                  const pct = Math.round(m.share * 100);
-                  return (
-                    <div key={m.group} style={{ marginBottom: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: C.ink2 }}>{m.label}</span>
-                        <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: C.ink3 }}>{pct}%</span>
-                      </div>
-                      <div style={{ height: 7, borderRadius: radius.sm, background: C.inner, overflow: "hidden" }}>
-                        <div style={{ width: `${Math.max(2, m.share * 100)}%`, height: "100%", background: color, opacity: 0.78 }} />
-                      </div>
-                    </div>
-                  );
-                })}
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-                  Estimated emphasis across this session's work — the same attribution Peak uses to infer your strength.
-                </div>
               </div>
             </>
           )}
@@ -169,7 +177,9 @@ function ExerciseBlock({ ex, sys, onOpen }: { ex: SessionExerciseRow; sys: "metr
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: mono, fontSize: 12 }}>
             <span style={{ color: C.muted, width: 18 }}>{i + 1}</span>
             <span style={{ color: C.ink }}>
-              {set.weightKg != null && set.weightKg > 0 ? `${kgToDisplay(set.weightKg, sys, 1)}${wUnit}${ex.perArm ? "/arm" : ""} × ${set.reps}` : `${set.reps} reps`}
+              {set.bodyweight
+                ? (set.weightKg != null && set.weightKg > 0 ? `BW+${kgToDisplay(set.weightKg, sys, 1)}${wUnit} × ${set.reps}` : `BW × ${set.reps}`)
+                : (set.weightKg != null && set.weightKg > 0 ? `${kgToDisplay(set.weightKg, sys, 1)}${wUnit}${ex.perArm ? "/arm" : ""} × ${set.reps}` : `${set.reps} reps`)}
             </span>
             {set.rpe != null && <span style={{ color: C.orange }}>@{set.rpe}</span>}
             {set.est1RM != null && <span style={{ color: C.muted, marginLeft: "auto" }}>~{kgToDisplay(set.est1RM, sys, 0)}{wUnit} 1RM</span>}

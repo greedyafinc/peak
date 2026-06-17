@@ -6,13 +6,17 @@ import { usePeak } from "../store";
 import { est1RM } from "../engine/math";
 import { SCREEN_STYLE, contentPad } from "./layoutPresets";
 import { C, mono, WORKOUT_THEME } from "../theme";
-import { Card, SectionTitle, Kicker, PrimaryButton, GhostButton, PerArmBadge } from "../components/ui";
+import { Card, SectionTitle, Kicker, PrimaryButton, GhostButton, PerArmBadge, BodyweightBadge } from "../components/ui";
 import { WeeklyAgenda } from "../components/WeeklyAgenda";
 import { EllipsisMenu } from "../components/SessionMenu";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { isPerArm } from "../data/exerciseCatalog";
 import { fmtClock, fmtDistanceKm, kgToDisplay, paceLabel, weightUnit } from "../units";
 import type { Session } from "../types";
+
+// Feed cards stay glanceable: a session shows at most this many exercises inline,
+// and the rest live in the full-page session detail (tap the card / "+N more").
+const MAX_FEED_EXERCISES = 3;
 
 export function Log() {
   const s = usePeak();
@@ -113,9 +117,10 @@ function SessionCard({ sess }: { sess: Session }) {
 
       {/* body */}
       <div style={{ padding: "0 16px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
-        {sess.entries.map((entry) => {
+        {sess.entries.slice(0, MAX_FEED_EXERCISES).map((entry) => {
           const ex = EXERCISE_BY_ID[entry.exerciseId];
           const perArm = ex ? isPerArm(ex) : false;
+          const isBw = ex?.isBodyweight ?? false;
           return (
             <div key={entry.id}>
               {/* tap an exercise → its in-depth detail (trajectory, percentile, history, tips) */}
@@ -130,17 +135,22 @@ function SessionCard({ sess }: { sess: Session }) {
               >
                 <span style={{ fontSize: 13, fontWeight: 700, color: C.ink2 }}>{ex?.name ?? entry.exerciseId}</span>
                 {perArm && <PerArmBadge />}
+                {isBw && <BodyweightBadge />}
                 {ex && <span style={{ marginLeft: "auto", color: C.muted, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>›</span>}
               </button>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {entry.sets.map((set, i) => {
                   const w = set.weight?.value;
-                  const e1 = w != null && w > 0 ? est1RM(w, set.reps) : null;
+                  // Compact feed: a calisthenics set reads "BW × reps" (+ added plates); its
+                  // 1RM needs the bodyweight load, so it's shown on the exercise detail, not here.
+                  const e1 = !isBw && w != null && w > 0 ? est1RM(w, set.reps) : null;
                   return (
                     <div key={set.id} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: mono, fontSize: 12 }}>
                       <span style={{ color: C.muted, width: 18 }}>{i + 1}</span>
                       <span style={{ color: C.ink }}>
-                        {w != null ? `${Number(kgToDisplay(w, sys, 1))}${wUnit}${perArm ? "/arm" : ""} × ${set.reps}` : `${set.reps} reps`}
+                        {isBw
+                          ? (w != null && w > 0 ? `BW+${Number(kgToDisplay(w, sys, 1))}${wUnit} × ${set.reps}` : `BW × ${set.reps}`)
+                          : (w != null ? `${Number(kgToDisplay(w, sys, 1))}${wUnit}${perArm ? "/arm" : ""} × ${set.reps}` : `${set.reps} reps`)}
                       </span>
                       {set.rpe != null && <span style={{ color: C.orange }}>@{set.rpe}</span>}
                       {e1 != null && <span style={{ color: C.muted, marginLeft: "auto" }}>~{kgToDisplay(e1, sys, 0)}{wUnit} 1RM</span>}
@@ -151,6 +161,21 @@ function SessionCard({ sess }: { sess: Session }) {
             </div>
           );
         })}
+
+        {/* overflow → the full session detail holds the rest */}
+        {sess.entries.length > MAX_FEED_EXERCISES && (
+          <button
+            onClick={() => s.set({ sessionDetailId: sess.id })}
+            style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+              background: "none", border: "none", padding: "2px 0", cursor: "pointer",
+              fontFamily: mono, fontSize: 12, fontWeight: 700, letterSpacing: "0.3px", color: C.sub,
+            }}
+          >
+            +{sess.entries.length - MAX_FEED_EXERCISES} more exercise{sess.entries.length - MAX_FEED_EXERCISES === 1 ? "" : "s"}
+            <span style={{ color: C.muted, fontSize: 15, fontWeight: 700, lineHeight: 1 }}>›</span>
+          </button>
+        )}
 
         {sess.cardio?.map((cs) => {
           const durSec = cs.duration.value * 60; // cardio duration canonical = minutes
