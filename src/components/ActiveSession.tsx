@@ -10,9 +10,10 @@ import { inputStyle, cellInput, UnitToggle, StatTile, ExerciseHeader } from "./u
 import { ExercisePickerModal } from "./ExercisePickerModal";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { categoryOf, isPerArm, perArmFactor, bodyweightLoadFactor } from "../data/exerciseCatalog";
-import { fmtClock, kgToDisplay, weightUnit } from "../units";
+import { fmtClock, kgToDisplay, weightToKg, weightUnit } from "../units";
 import type { Session, UnitSystem } from "../types";
 import { Z_INDEX, TIMINGS } from "../constants/ui";
+import { buildProgressionSuggestion, suggestionPlaceholders } from "../engine/progressionHint";
 
 // ── 1-second ticker — only runs while `active`, so an off-screen view's interval
 //    isn't spinning (the elapsed/rest displays only matter while visible). ───────
@@ -268,6 +269,7 @@ export function ActiveSession() {
                 liEx={ex}
                 sys={sys}
                 sessions={s.data.sessions}
+                bodyweightKg={bwKg}
                 onSwap={() => setPicker({ mode: "swap", liExId: ex.id, exerciseId: ex.exerciseId })}
                 onRemove={() => s.removeLiveExercise(ex.id)}
                 onAddSet={() => s.addLiveSet(ex.id)}
@@ -383,11 +385,12 @@ function RestBtn({ label, onClick, fill }: { label: string; onClick: () => void;
 }
 
 function ExerciseCard({
-  liEx, sys, sessions, onSwap, onRemove, onAddSet, onRemoveSet, onSetField, onRest, onToggleDone,
+  liEx, sys, sessions, bodyweightKg, onSwap, onRemove, onAddSet, onRemoveSet, onSetField, onRest, onToggleDone,
 }: {
   liEx: LiveExercise;
   sys: UnitSystem;
   sessions: Session[];
+  bodyweightKg: number | null;
   onSwap: () => void;
   onRemove: () => void;
   onAddSet: () => void;
@@ -398,10 +401,38 @@ function ExerciseCard({
 }) {
   const ex = EXERCISE_BY_ID[liEx.exerciseId];
   const prev = useMemo(() => lastPerformance(liEx.exerciseId, sessions), [liEx.exerciseId, sessions]);
+  const liveDoneSets = useMemo(
+    () =>
+      liEx.sets
+        .filter((st) => st.done && repsValidOf(st))
+        .map((st) => {
+          const w = parseFloat(st.weight);
+          return {
+            weightKg: Number.isFinite(w) && w > 0 ? weightToKg(w, sys) : null,
+            reps: Math.floor(numOf(st.reps)),
+          };
+        }),
+    [liEx.sets, sys],
+  );
+  const progression = useMemo(
+    () =>
+      ex
+        ? buildProgressionSuggestion(
+            liEx.exerciseId,
+            sessions,
+            sys,
+            bodyweightKg,
+            liveDoneSets.length > 0 ? liveDoneSets : undefined,
+            liEx.sets[0]?.targetReps,
+          )
+        : null,
+    [ex, liEx.exerciseId, liEx.sets, sessions, sys, bodyweightKg, liveDoneSets],
+  );
   const wUnit = weightUnit(sys);
   const isBw = ex?.isBodyweight ?? false;
   const perArm = ex ? isPerArm(ex) : false;
   const restSec = clampRestSec(liEx.restSec ?? TIMINGS.restDefaultSec);
+  const firstOpenIdx = liEx.sets.findIndex((st) => !st.done);
 
   // For a bodyweight lift the weight cell is OPTIONAL added load (a belt/vest); a prior
   // "weight" is that added load, shown with a leading "+". Otherwise it's the lifted load.
@@ -423,6 +454,10 @@ function ExerciseCard({
   // Ghost hint per row: prior set at that index (fallback to last prior set), else target.
   // Bodyweight rows hint the optional added load ("+0" when none was used last time).
   const hintFor = (idx: number, st: LiveSet): { w: string; reps: string } => {
+    if (progression && ex && idx === firstOpenIdx) {
+      const ph = suggestionPlaceholders(progression, ex, sys);
+      return { w: ph.weight, reps: ph.reps };
+    }
     const p = prev?.sets[idx] ?? prev?.sets[prev.sets.length - 1];
     const hasW = p?.wKg != null && p.wKg > 0;
     const w = isBw
@@ -451,6 +486,18 @@ function ExerciseCard({
         <button onClick={onRemove} aria-label="Remove exercise"
           style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 19, lineHeight: 1, padding: "2px 2px" }}>×</button>
       </div>
+
+      {progression && (
+        <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 12, background: `${C.accent}14`, border: `1px solid ${C.accent}44` }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0 }}>↗</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: C.accent, letterSpacing: "-0.1px" }}>{progression.title}</div>
+              <div style={{ fontSize: 12, color: C.ink3, marginTop: 3, lineHeight: 1.45 }}>{progression.body}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Per-exercise rest preference; autosaves and drives the next completed-set timer. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "8px 10px", borderRadius: 10, background: C.inner, border: `1px solid ${C.line2}` }}>

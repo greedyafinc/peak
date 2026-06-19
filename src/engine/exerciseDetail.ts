@@ -196,9 +196,9 @@ function strengthDetail(data: PeakData, exerciseId: string): ExerciseDetailView 
   if (efforts.length === 0) return null;
   efforts.sort((a, b) => a.at.getTime() - b.at.getTime());
 
-  // "Loaded" = we have a real load to est-1RM on (external weight, or a known-bodyweight
-  // calisthenics load). Then the metric is est-1RM; otherwise it falls back to rep count.
-  const loaded = efforts.some((e) => e.effKg > 0);
+  // Chart/trend metric: external-weight lifts use est-1RM; rep-based bodyweight moves
+  // (pull-ups, push-ups, etc.) chart reps even when we know the effective load from build.
+  const loaded = !isBw && efforts.some((e) => e.effKg > 0);
   const metricOf = (e: Effort): number => (loaded ? est1RM(e.effKg, e.reps) : e.reps);
   const fmtMetric = (v: number): string => (loaded ? fmtWeight(v, sys, 0) : `${Math.round(v)} reps`);
 
