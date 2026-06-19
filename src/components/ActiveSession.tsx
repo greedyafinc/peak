@@ -13,7 +13,7 @@ import { categoryOf, isPerArm, perArmFactor, bodyweightLoadFactor } from "../dat
 import { fmtClock, kgToDisplay, weightToKg, weightUnit } from "../units";
 import type { Session, UnitSystem } from "../types";
 import { Z_INDEX, TIMINGS } from "../constants/ui";
-import { buildProgressionSuggestion, suggestionPlaceholders } from "../engine/progressionHint";
+import { buildPlateauCoachSuggestion, buildFeedbackCoachSuggestion, suggestionPlaceholders, adjustToDraftStrings, type CoachSuggestion } from "../engine/progressionHint";
 
 // ── 1-second ticker — only runs while `active`, so an off-screen view's interval
 //    isn't spinning (the elapsed/rest displays only matter while visible). ───────
@@ -270,6 +270,7 @@ export function ActiveSession() {
                 sys={sys}
                 sessions={s.data.sessions}
                 bodyweightKg={bwKg}
+                existingExerciseIds={existingIds}
                 onSwap={() => setPicker({ mode: "swap", liExId: ex.id, exerciseId: ex.exerciseId })}
                 onRemove={() => s.removeLiveExercise(ex.id)}
                 onAddSet={() => s.addLiveSet(ex.id)}
@@ -385,12 +386,13 @@ function RestBtn({ label, onClick, fill }: { label: string; onClick: () => void;
 }
 
 function ExerciseCard({
-  liEx, sys, sessions, bodyweightKg, onSwap, onRemove, onAddSet, onRemoveSet, onSetField, onRest, onToggleDone,
+  liEx, sys, sessions, bodyweightKg, existingExerciseIds, onSwap, onRemove, onAddSet, onRemoveSet, onSetField, onRest, onToggleDone,
 }: {
   liEx: LiveExercise;
   sys: UnitSystem;
   sessions: Session[];
   bodyweightKg: number | null;
+  existingExerciseIds: string[];
   onSwap: () => void;
   onRemove: () => void;
   onAddSet: () => void;
@@ -399,9 +401,24 @@ function ExerciseCard({
   onRest: (restSec: number) => void;
   onToggleDone: (st: LiveSet) => void;
 }) {
+  const peak = usePeak();
+  const [feedback, setFeedback] = useState<"too_easy" | "too_hard" | null>(null);
+  const [dismissedPlateau, setDismissedPlateau] = useState(false);
+
   const ex = EXERCISE_BY_ID[liEx.exerciseId];
   const prev = useMemo(() => lastPerformance(liEx.exerciseId, sessions), [liEx.exerciseId, sessions]);
-  const liveDoneSets = useMemo(
+  const referenceSets = useMemo(() => {
+    const done = liEx.sets.filter((st) => st.done && repsValidOf(st));
+    const pool = done.length > 0 ? done : liEx.sets.filter((st) => !st.done && (repsValidOf(st) || numOf(st.weight) > 0));
+    return pool.map((st) => {
+      const w = parseFloat(st.weight);
+      return {
+        weightKg: Number.isFinite(w) && w > 0 ? weightToKg(w, sys) : null,
+        reps: Math.floor(numOf(st.reps)),
+      };
+    });
+  }, [liEx.sets, sys]);
+  const doneSetsForPlateau = useMemo(
     () =>
       liEx.sets
         .filter((st) => st.done && repsValidOf(st))
@@ -414,20 +431,64 @@ function ExerciseCard({
         }),
     [liEx.sets, sys],
   );
-  const progression = useMemo(
+  const plateauCoach = useMemo(
     () =>
-      ex
-        ? buildProgressionSuggestion(
+      ex && !dismissedPlateau
+        ? buildPlateauCoachSuggestion(
             liEx.exerciseId,
             sessions,
             sys,
             bodyweightKg,
-            liveDoneSets.length > 0 ? liveDoneSets : undefined,
+            doneSetsForPlateau.length > 0 ? doneSetsForPlateau : undefined,
             liEx.sets[0]?.targetReps,
           )
         : null,
-    [ex, liEx.exerciseId, liEx.sets, sessions, sys, bodyweightKg, liveDoneSets],
+    [ex, dismissedPlateau, liEx.exerciseId, liEx.sets, sessions, sys, bodyweightKg, doneSetsForPlateau],
   );
+  const feedbackCoach = useMemo(
+    () =>
+      feedback && ex
+        ? buildFeedbackCoachSuggestion(
+            feedback,
+            liEx.exerciseId,
+            sessions,
+            sys,
+            bodyweightKg,
+            referenceSets.length > 0 ? referenceSets : undefined,
+            liEx.sets[0]?.targetReps,
+            existingExerciseIds,
+          )
+        : null,
+    [feedback, ex, liEx.exerciseId, liEx.sets, sessions, sys, bodyweightKg, referenceSets, existingExerciseIds],
+  );
+  const activeCoach: CoachSuggestion | null = feedbackCoach ?? plateauCoach;
+  const hasPendingSets = liEx.sets.some((st) => !st.done);
+
+  const dismissCoach = () => {
+    if (feedback) setFeedback(null);
+    else setDismissedPlateau(true);
+  };
+
+  const acceptAdjust = () => {
+    if (!activeCoach || !ex || !hasPendingSets) return;
+    const { weight, reps } = adjustToDraftStrings(activeCoach.adjust, ex, sys);
+    peak.applyCoachToPendingSets(liEx.id, weight, reps);
+    if (feedback) setFeedback(null);
+    else setDismissedPlateau(true);
+  };
+
+  const acceptSwap = () => {
+    if (!activeCoach?.swap || !ex) return;
+    const { weight, reps } = adjustToDraftStrings(activeCoach.adjust, ex, sys);
+    peak.swapLiveExerciseKeepDone(liEx.id, activeCoach.swap.exerciseId, weight, reps);
+    setFeedback(null);
+    setDismissedPlateau(true);
+  };
+
+  useEffect(() => {
+    setFeedback(null);
+    setDismissedPlateau(false);
+  }, [liEx.id, liEx.exerciseId]);
   const wUnit = weightUnit(sys);
   const isBw = ex?.isBodyweight ?? false;
   const perArm = ex ? isPerArm(ex) : false;
@@ -454,8 +515,8 @@ function ExerciseCard({
   // Ghost hint per row: prior set at that index (fallback to last prior set), else target.
   // Bodyweight rows hint the optional added load ("+0" when none was used last time).
   const hintFor = (idx: number, st: LiveSet): { w: string; reps: string } => {
-    if (progression && ex && idx === firstOpenIdx) {
-      const ph = suggestionPlaceholders(progression, ex, sys);
+    if (activeCoach && ex && idx === firstOpenIdx) {
+      const ph = suggestionPlaceholders(activeCoach.adjust, ex, sys);
       return { w: ph.weight, reps: ph.reps };
     }
     const p = prev?.sets[idx] ?? prev?.sets[prev.sets.length - 1];
@@ -487,16 +548,20 @@ function ExerciseCard({
           style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 19, lineHeight: 1, padding: "2px 2px" }}>×</button>
       </div>
 
-      {progression && (
-        <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 12, background: `${C.accent}14`, border: `1px solid ${C.accent}44` }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-            <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0 }}>↗</span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: C.accent, letterSpacing: "-0.1px" }}>{progression.title}</div>
-              <div style={{ fontSize: 12, color: C.ink3, marginTop: 3, lineHeight: 1.45 }}>{progression.body}</div>
-            </div>
-          </div>
-        </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <DifficultyBtn label="Too easy" active={feedback === "too_easy"} onClick={() => setFeedback("too_easy")} tone="easy" />
+        <DifficultyBtn label="Too hard" active={feedback === "too_hard"} onClick={() => setFeedback("too_hard")} tone="hard" />
+      </div>
+
+      {activeCoach && (
+        <CoachCard
+          coach={activeCoach}
+          canAccept={hasPendingSets}
+          onAccept={acceptAdjust}
+          onDismiss={dismissCoach}
+          swap={activeCoach.swap}
+          onSwap={activeCoach.swap ? acceptSwap : undefined}
+        />
       )}
 
       {/* Per-exercise rest preference; autosaves and drives the next completed-set timer. */}
@@ -606,5 +671,109 @@ function ExerciseCard({
         ＋ Add set
       </button>
     </div>
+  );
+}
+
+function DifficultyBtn({
+  label, onClick, active, tone,
+}: {
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  tone: "easy" | "hard";
+}) {
+  const col = tone === "easy" ? C.accent : C.orange;
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1,
+        fontSize: 12,
+        fontWeight: 700,
+        padding: "8px 10px",
+        borderRadius: 10,
+        cursor: "pointer",
+        border: `1px solid ${active ? col : C.line2}`,
+        background: active ? `${col}18` : C.inner,
+        color: active ? col : C.sub,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function CoachCard({
+  coach, canAccept, onAccept, onDismiss, swap, onSwap,
+}: {
+  coach: CoachSuggestion;
+  canAccept: boolean;
+  onAccept: () => void;
+  onDismiss: () => void;
+  swap?: CoachSuggestion["swap"];
+  onSwap?: () => void;
+}) {
+  const icon = coach.source === "too_hard" ? "↘" : "↗";
+  const col = coach.source === "too_hard" ? C.orange : C.accent;
+  return (
+    <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ padding: "10px 12px", borderRadius: 12, background: `${col}14`, border: `1px solid ${col}44` }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0, color: col }}>{icon}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: col, letterSpacing: "-0.1px" }}>{coach.title}</div>
+            <div style={{ fontSize: 12, color: C.ink3, marginTop: 3, lineHeight: 1.45 }}>{coach.body}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
+          <CoachActionBtn label="Dismiss" onClick={onDismiss} />
+          <CoachActionBtn label="Accept" onClick={onAccept} primary fill={col} disabled={!canAccept} />
+        </div>
+        {!canAccept && (
+          <div style={{ fontSize: 10.5, color: C.muted, marginTop: 6, textAlign: "right" }}>All sets are done — suggestion won't change logged work.</div>
+        )}
+      </div>
+      {swap && onSwap && (
+        <div style={{ padding: "10px 12px", borderRadius: 12, background: `${C.blue}12`, border: `1px solid ${C.blue}33` }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.blue }}>Easier alternative</div>
+          <div style={{ fontSize: 12, color: C.ink3, marginTop: 3, lineHeight: 1.45 }}>
+            Swap remaining sets to <strong style={{ color: C.ink }}>{swap.exerciseName}</strong> — same muscles, usually less demanding.
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
+            <CoachActionBtn label={`Swap to ${swap.exerciseName}`} onClick={onSwap} primary fill={C.blue} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CoachActionBtn({
+  label, onClick, primary, fill, disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  primary?: boolean;
+  fill?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      style={{
+        fontSize: 12,
+        fontWeight: 700,
+        padding: "6px 12px",
+        borderRadius: 9,
+        cursor: disabled ? "default" : "pointer",
+        border: `1px solid ${primary && fill ? fill : C.line2}`,
+        background: primary && fill && !disabled ? fill : C.inner,
+        color: primary && fill && !disabled ? "#0a0b0d" : disabled ? C.muted2 : C.sub,
+        opacity: disabled ? 0.55 : 1,
+      }}
+    >
+      {label}
+    </button>
   );
 }

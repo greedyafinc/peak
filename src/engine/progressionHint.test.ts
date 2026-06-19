@@ -1,7 +1,10 @@
 import { test, expect } from "bun:test";
 import {
+  buildFeedbackCoachSuggestion,
+  buildPlateauCoachSuggestion,
   buildProgressionSuggestion,
   collectTopPerformances,
+  easierAlternativeFor,
   isProgressionPlateau,
   PLATEAU_MIN_SESSIONS,
 } from "./progressionHint";
@@ -71,27 +74,69 @@ test("live done sets can complete the plateau count mid-session", () => {
   expect(isProgressionPlateau("barbell-bench-press", sessions, 80, live, PLATEAU_MIN_SESSIONS)).toBe(true);
 });
 
-test("buildProgressionSuggestion prefers +1 rep in moderate rep ranges", () => {
+test("buildPlateauCoachSuggestion prefers +1 rep in moderate rep ranges", () => {
+  const sessions = [
+    benchSession("s1", "2026-06-10", 100, 8),
+    benchSession("s2", "2026-06-03", 100, 8),
+    benchSession("s3", "2026-05-27", 100, 8),
+  ];
+  const s = buildPlateauCoachSuggestion("barbell-bench-press", sessions, "metric", 80)!;
+  expect(s).not.toBeNull();
+  expect(s.adjust.reps).toBe(9);
+  expect(s.title).toContain("rep");
+});
+
+test("buildPlateauCoachSuggestion prefers load when reps are high", () => {
+  const sessions = [
+    benchSession("s1", "2026-06-10", 60, 12),
+    benchSession("s2", "2026-06-03", 60, 12),
+    benchSession("s3", "2026-05-27", 60, 12),
+  ];
+  const s = buildPlateauCoachSuggestion("barbell-bench-press", sessions, "metric", 80)!;
+  expect(s.adjust.weightKg).toBeCloseTo(62.5, 6);
+  expect(s.adjust.reps).toBe(12);
+});
+
+test("buildProgressionSuggestion legacy wrapper still works", () => {
   const sessions = [
     benchSession("s1", "2026-06-10", 100, 8),
     benchSession("s2", "2026-06-03", 100, 8),
     benchSession("s3", "2026-05-27", 100, 8),
   ];
   const s = buildProgressionSuggestion("barbell-bench-press", sessions, "metric", 80)!;
-  expect(s).not.toBeNull();
   expect(s.kind).toBe("reps");
   expect(s.suggestReps).toBe(9);
-  expect(s.title).toContain("rep");
 });
 
-test("buildProgressionSuggestion prefers load when reps are high", () => {
-  const sessions = [
-    benchSession("s1", "2026-06-10", 60, 12),
-    benchSession("s2", "2026-06-03", 60, 12),
-    benchSession("s3", "2026-05-27", 60, 12),
-  ];
-  const s = buildProgressionSuggestion("barbell-bench-press", sessions, "metric", 80)!;
-  expect(s.kind).toBe("weight");
-  expect(s.suggestWeightKg).toBeCloseTo(62.5, 6);
-  expect(s.suggestReps).toBe(12);
+test("too_easy feedback suggests a rep or load bump from reference set", () => {
+  const s = buildFeedbackCoachSuggestion(
+    "too_easy",
+    "barbell-bench-press",
+    [],
+    "metric",
+    80,
+    [{ weightKg: 100, reps: 8 }],
+  )!;
+  expect(s.source).toBe("too_easy");
+  expect(s.adjust.reps).toBe(9);
+});
+
+test("too_hard feedback suggests fewer reps first", () => {
+  const s = buildFeedbackCoachSuggestion(
+    "too_hard",
+    "barbell-bench-press",
+    [],
+    "metric",
+    80,
+    [{ weightKg: 100, reps: 8 }],
+  )!;
+  expect(s.source).toBe("too_hard");
+  expect(s.adjust.reps).toBe(7);
+  expect(s.adjust.weightKg).toBeCloseTo(100, 6);
+});
+
+test("too_hard on barbell bench can offer an easier alternative", () => {
+  const alt = easierAlternativeFor("barbell-bench-press");
+  expect(alt).not.toBeNull();
+  expect(alt!.exerciseId).not.toBe("barbell-bench-press");
 });

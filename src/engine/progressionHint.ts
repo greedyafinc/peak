@@ -1,25 +1,40 @@
-// Peak — progressive-overload nudge for the live Gym session.
+// Peak — coach suggestions for the live Gym session.
 //
-// PURE / DETERMINISTIC: given exercise history (+ optional in-session done sets),
-// detect when the lifter has held the same top set for several sessions and suggest
-// a small rep or load bump. No fabricated numbers — only real logged performances.
+// PURE / DETERMINISTIC: plateau detection, difficulty feedback (too easy / too hard),
+// and easier-alternative ranking. All numbers come from real logged or in-session data.
 
-import type { ExerciseDef, Session, UnitSystem } from "../types";
+import type { Equipment, ExerciseDef, Session, UnitSystem } from "../types";
 import { EXERCISE_BY_ID } from "../data/exercises";
-import { bodyweightBaseKg, isPerArm } from "../data/exerciseCatalog";
+import { alternativesFor, bodyweightBaseKg, isPerArm, scoreAlternative } from "../data/exerciseCatalog";
 import { est1RM } from "./math";
 import { fmtWeight, kgToDisplay } from "../units";
 
-/** Minimum consecutive sessions at the same top set before we nudge. */
+/** Minimum consecutive sessions at the same top set before a plateau nudge. */
 export const PLATEAU_MIN_SESSIONS = 3;
 
-/** A single session's best set for an exercise (by est-1RM, else reps). */
-export type TopPerformance = {
-  weightKg: number | null; // entered load (added plates for calisthenics)
+export type CoachSuggestionSource = "plateau" | "too_easy" | "too_hard";
+
+export type CoachAdjustAction = {
+  type: "adjust";
+  weightKg: number | null;
   reps: number;
-  effKg: number;           // effective load used for ranking / comparison
 };
 
+export type CoachSwapAction = {
+  type: "swap";
+  exerciseId: string;
+  exerciseName: string;
+};
+
+export type CoachSuggestion = {
+  source: CoachSuggestionSource;
+  title: string;
+  body: string;
+  adjust: CoachAdjustAction;
+  swap?: CoachSwapAction;
+};
+
+/** @deprecated — use CoachSuggestion */
 export type ProgressionSuggestion = {
   plateauSessions: number;
   current: TopPerformance;
@@ -30,7 +45,25 @@ export type ProgressionSuggestion = {
   body: string;
 };
 
+export type TopPerformance = {
+  weightKg: number | null;
+  reps: number;
+  effKg: number;
+};
+
+export type ReferenceSetInput = { weightKg: number | null; reps: number };
+
 type LiveDoneSet = { weightKg: number | null; reps: number };
+
+const EQUIP_EASE: Partial<Record<Equipment, number>> = {
+  machine: 5,
+  cable: 4,
+  band: 4,
+  bodyweight: 3,
+  dumbbell: 2,
+  kettlebell: 2,
+  barbell: 1,
+};
 
 function topFromSets(
   sets: { weightKg: number | null; reps: number }[],
@@ -48,17 +81,12 @@ function topFromSets(
     const score = eff > 0 ? est1RM(eff, st.reps) : st.reps;
     if (score > best1) {
       best1 = score;
-      best = {
-        weightKg: st.weightKg,
-        reps: st.reps,
-        effKg: eff,
-      };
+      best = { weightKg: st.weightKg, reps: st.reps, effKg: eff };
     }
   }
   return best;
 }
 
-/** Signature for "same performance" — entered load + reps (ignores drifting bodyweight base). */
 function perfKey(p: TopPerformance): string {
   const w = p.weightKg != null && p.weightKg > 0 ? p.weightKg.toFixed(3) : "0";
   return `${w}:${p.reps}`;
@@ -68,7 +96,39 @@ function weightIncrementKg(ex: ExerciseDef): number {
   return isPerArm(ex) ? 2 : 2.5;
 }
 
-/** Collect each session's top set for `exerciseId`, newest first. Skips empty entries. */
+function formatCurrentLoad(
+  p: TopPerformance,
+  ex: ExerciseDef,
+  sys: UnitSystem,
+  armSuffix: string,
+): string {
+  if (ex.isBodyweight) {
+    const added = p.weightKg != null && p.weightKg > 0 ? fmtWeight(p.weightKg, sys, 0) : null;
+    return added ? `BW+${added} × ${p.reps}` : `${p.reps} reps`;
+  }
+  if (p.weightKg != null && p.weightKg > 0) {
+    return `${fmtWeight(p.weightKg, sys, isPerArm(ex) ? 1 : 0)}${armSuffix} × ${p.reps}`;
+  }
+  return `${p.reps} reps`;
+}
+
+function formatTargetLoad(
+  weightKg: number | null,
+  reps: number,
+  ex: ExerciseDef,
+  sys: UnitSystem,
+  armSuffix: string,
+): string {
+  if (ex.isBodyweight) {
+    if (weightKg != null && weightKg > 0) return `BW+${fmtWeight(weightKg, sys, 0)} × ${reps}`;
+    return `${reps} reps`;
+  }
+  if (weightKg != null && weightKg > 0) {
+    return `${fmtWeight(weightKg, sys, isPerArm(ex) ? 1 : 0)}${armSuffix} × ${reps}`;
+  }
+  return `${reps} reps`;
+}
+
 export function collectTopPerformances(
   exerciseId: string,
   sessions: Session[],
@@ -96,10 +156,6 @@ export function collectTopPerformances(
   return out;
 }
 
-/**
- * True when the newest `minSessions` performances all match on entered load + reps.
- * Optionally prepend the in-session done sets as the most recent "visit".
- */
 export function isProgressionPlateau(
   exerciseId: string,
   sessions: Session[],
@@ -123,7 +179,188 @@ export function isProgressionPlateau(
   return performances.slice(0, minSessions).every((p) => perfKey(p) === key);
 }
 
-/** Build a rep- or load-first nudge when a plateau is detected. Returns null if not plateaued. */
+/** Pick the set difficulty feedback should anchor on: last done live set, else history. */
+export function resolveReferencePerformance(
+  exerciseId: string,
+  sessions: Session[],
+  bodyweightKg: number | null,
+  liveSets?: ReferenceSetInput[],
+): TopPerformance | null {
+  const ex = EXERCISE_BY_ID[exerciseId];
+  if (!ex) return null;
+
+  if (liveSets && liveSets.length > 0) {
+    const usable = liveSets.filter((s) => s.reps > 0);
+    if (usable.length > 0) {
+      const ref = usable[usable.length - 1];
+      const bwBase = bodyweightBaseKg(ex, bodyweightKg);
+      const added = ref.weightKg ?? 0;
+      const eff = ex.isBodyweight ? bwBase + Math.max(0, added) : Math.max(0, added);
+      return { weightKg: ref.weightKg, reps: ref.reps, effKg: eff };
+    }
+  }
+
+  return collectTopPerformances(exerciseId, sessions, bodyweightKg)[0] ?? null;
+}
+
+function buildIncreaseAdjust(
+  current: TopPerformance,
+  ex: ExerciseDef,
+  sys: UnitSystem,
+  targetRepHigh?: number | null,
+): { adjust: CoachAdjustAction; title: string; body: string } {
+  const perArm = isPerArm(ex);
+  const armSuffix = perArm ? " / arm" : "";
+  const repCap = targetRepHigh ?? 12;
+  const incKg = weightIncrementKg(ex);
+  const preferWeight = current.reps >= repCap;
+
+  const currentLabel = formatCurrentLoad(current, ex, sys, armSuffix);
+
+  if (preferWeight && (ex.isBodyweight || current.weightKg != null)) {
+    const nextWeightKg =
+      current.weightKg != null && current.weightKg > 0 ? current.weightKg + incKg : incKg;
+    const targetLabel = formatTargetLoad(nextWeightKg, current.reps, ex, sys, armSuffix);
+    return {
+      adjust: { type: "adjust", weightKg: nextWeightKg, reps: current.reps },
+      title: "Ready for a little more load",
+      body: `You're at ${currentLabel}. Try ${targetLabel} when it feels clean.`,
+    };
+  }
+
+  const nextReps = current.reps + 1;
+  return {
+    adjust: { type: "adjust", weightKg: current.weightKg, reps: nextReps },
+    title: "Try one more rep",
+    body: `You're at ${currentLabel}. ${nextReps} reps is a natural next step before adding load.`,
+  };
+}
+
+function buildDecreaseAdjust(
+  current: TopPerformance,
+  ex: ExerciseDef,
+  sys: UnitSystem,
+): { adjust: CoachAdjustAction; title: string; body: string } {
+  const perArm = isPerArm(ex);
+  const armSuffix = perArm ? " / arm" : "";
+  const incKg = weightIncrementKg(ex);
+  const currentLabel = formatCurrentLoad(current, ex, sys, armSuffix);
+
+  if (current.reps > 1) {
+    const nextReps = current.reps - 1;
+    const targetLabel = formatTargetLoad(current.weightKg, nextReps, ex, sys, armSuffix);
+    return {
+      adjust: { type: "adjust", weightKg: current.weightKg, reps: nextReps },
+      title: "Dial it back a rep",
+      body: `If ${currentLabel} felt heavy, try ${targetLabel} on your remaining sets.`,
+    };
+  }
+
+  const curW = current.weightKg ?? 0;
+  if (curW > incKg) {
+    const nextWeightKg = Math.max(0, curW - incKg);
+    const targetLabel = formatTargetLoad(nextWeightKg > 0 ? nextWeightKg : null, 1, ex, sys, armSuffix);
+    return {
+      adjust: { type: "adjust", weightKg: nextWeightKg > 0 ? nextWeightKg : null, reps: 1 },
+      title: "Drop the load slightly",
+      body: `If ${currentLabel} was too much, ${targetLabel} is a safer target for what's left.`,
+    };
+  }
+
+  return {
+    adjust: { type: "adjust", weightKg: current.weightKg, reps: Math.max(1, current.reps) },
+    title: "Stay at this level",
+    body: `You're already at a light working weight for ${currentLabel}. An easier alternative may help more than dropping further.`,
+  };
+}
+
+/** Rank a substitute that is likely easier to execute than the current lift. */
+export function easierAlternativeFor(
+  exerciseId: string,
+  excludeExerciseIds: string[] = [],
+): CoachSwapAction | null {
+  const base = EXERCISE_BY_ID[exerciseId];
+  if (!base) return null;
+
+  const baseEase = EQUIP_EASE[base.equipment] ?? 0;
+  const exclude = new Set([exerciseId, ...excludeExerciseIds]);
+
+  const ranked = alternativesFor(exerciseId, 16)
+    .filter((a) => !exclude.has(a.id))
+    .map((a) => ({
+      a,
+      score: scoreAlternative(base, a) + ((EQUIP_EASE[a.equipment] ?? 0) - baseEase) * 1.5,
+    }))
+    .filter((x) => x.score > 0 && (EQUIP_EASE[x.a.equipment] ?? 0) >= baseEase)
+    .sort((x, y) => y.score - x.score || x.a.name.localeCompare(y.a.name));
+
+  const best = ranked[0];
+  if (!best) return null;
+  return { type: "swap", exerciseId: best.a.id, exerciseName: best.a.name };
+}
+
+export function buildPlateauCoachSuggestion(
+  exerciseId: string,
+  sessions: Session[],
+  sys: UnitSystem,
+  bodyweightKg: number | null,
+  liveDoneSets?: LiveDoneSet[],
+  targetRepHigh?: number | null,
+): CoachSuggestion | null {
+  if (!isProgressionPlateau(exerciseId, sessions, bodyweightKg, liveDoneSets)) return null;
+
+  const current =
+    resolveReferencePerformance(exerciseId, sessions, bodyweightKg, liveDoneSets) ??
+    collectTopPerformances(exerciseId, sessions, bodyweightKg)[0];
+  if (!current) return null;
+
+  const ex = EXERCISE_BY_ID[exerciseId]!;
+  const built = buildIncreaseAdjust(current, ex, sys, targetRepHigh);
+  const plateauSessions = PLATEAU_MIN_SESSIONS;
+  const currentLabel = formatCurrentLoad(current, ex, sys, isPerArm(ex) ? " / arm" : "");
+  const delta = built.body.replace(/^You're at [^.]+\.\s*/, "");
+
+  return {
+    source: "plateau",
+    title: built.title,
+    body: `You've held ${currentLabel} for ${plateauSessions} sessions. ${delta}`,
+    adjust: built.adjust,
+  };
+}
+
+export function buildFeedbackCoachSuggestion(
+  source: "too_easy" | "too_hard",
+  exerciseId: string,
+  sessions: Session[],
+  sys: UnitSystem,
+  bodyweightKg: number | null,
+  referenceSets?: ReferenceSetInput[],
+  targetRepHigh?: number | null,
+  excludeExerciseIds: string[] = [],
+): CoachSuggestion | null {
+  const ex = EXERCISE_BY_ID[exerciseId];
+  if (!ex) return null;
+
+  const current = resolveReferencePerformance(exerciseId, sessions, bodyweightKg, referenceSets);
+  if (!current) return null;
+
+  if (source === "too_easy") {
+    const built = buildIncreaseAdjust(current, ex, sys, targetRepHigh);
+    return { source, title: built.title, body: built.body, adjust: built.adjust };
+  }
+
+  const built = buildDecreaseAdjust(current, ex, sys);
+  const swap = easierAlternativeFor(exerciseId, excludeExerciseIds) ?? undefined;
+  return {
+    source,
+    title: built.title,
+    body: built.body,
+    adjust: built.adjust,
+    swap,
+  };
+}
+
+/** @deprecated — use buildPlateauCoachSuggestion */
 export function buildProgressionSuggestion(
   exerciseId: string,
   sessions: Session[],
@@ -132,101 +369,47 @@ export function buildProgressionSuggestion(
   liveDoneSets?: LiveDoneSet[],
   targetRepHigh?: number | null,
 ): ProgressionSuggestion | null {
-  const ex = EXERCISE_BY_ID[exerciseId];
-  if (!ex) return null;
-  if (!isProgressionPlateau(exerciseId, sessions, bodyweightKg, liveDoneSets)) return null;
-
-  const history = collectTopPerformances(exerciseId, sessions, bodyweightKg);
-  const liveTop =
-    liveDoneSets && liveDoneSets.length > 0 ? topFromSets(liveDoneSets, ex, bodyweightKg) : null;
-  const current = liveTop ?? history[0];
-  if (!current) return null;
-
-  const plateauSessions = PLATEAU_MIN_SESSIONS;
-  const perArm = isPerArm(ex);
-  const armSuffix = perArm ? " / arm" : "";
-  const repCap = targetRepHigh ?? 12;
-  const preferWeight = current.reps >= repCap;
-
-  const incKg = weightIncrementKg(ex);
-  const nextWeightKg =
-    current.weightKg != null && current.weightKg > 0
-      ? current.weightKg + incKg
-      : incKg;
-  const nextReps = current.reps + 1;
-
-  const currentLoadLabel = formatCurrentLoad(current, ex, sys, armSuffix);
-
-  if (preferWeight && (ex.isBodyweight || current.weightKg != null)) {
-    const targetLabel = ex.isBodyweight
-      ? `+${fmtWeight(nextWeightKg, sys, 0)} added load`
-      : `${fmtWeight(nextWeightKg, sys, perArm ? 1 : 0)}${armSuffix}`;
-    return {
-      plateauSessions,
-      current,
-      kind: "weight",
-      suggestReps: current.reps,
-      suggestWeightKg: nextWeightKg,
-      title: "Ready for a little more load",
-      body: `You've held ${currentLoadLabel} for ${plateauSessions} sessions. Try ${targetLabel} at ${current.reps} reps when it feels clean.`,
-    };
-  }
-
+  const coach = buildPlateauCoachSuggestion(
+    exerciseId, sessions, sys, bodyweightKg, liveDoneSets, targetRepHigh,
+  );
+  if (!coach) return null;
+  const current = resolveReferencePerformance(exerciseId, sessions, bodyweightKg, liveDoneSets)!;
+  const kind = coach.adjust.reps > current.reps ? "reps" as const : "weight" as const;
   return {
-    plateauSessions,
+    plateauSessions: PLATEAU_MIN_SESSIONS,
     current,
-    kind: "reps",
-    suggestReps: nextReps,
-    suggestWeightKg: current.weightKg,
-    title: "Try one more rep",
-    body: `You've held ${currentLoadLabel} for ${plateauSessions} sessions. ${nextReps} reps is a natural next step before adding load.`,
+    kind,
+    suggestReps: coach.adjust.reps,
+    suggestWeightKg: coach.adjust.weightKg,
+    title: coach.title,
+    body: coach.body,
   };
 }
 
-function formatCurrentLoad(
-  p: TopPerformance,
+export function adjustToDraftStrings(
+  adjust: CoachAdjustAction,
   ex: ExerciseDef,
   sys: UnitSystem,
-  armSuffix: string,
-): string {
-  if (ex.isBodyweight) {
-    const added = p.weightKg != null && p.weightKg > 0 ? fmtWeight(p.weightKg, sys, 0) : null;
-    return added ? `BW+${added} × ${p.reps}` : `${p.reps} reps`;
-  }
-  if (p.weightKg != null && p.weightKg > 0) {
-    return `${fmtWeight(p.weightKg, sys, isPerArm(ex) ? 1 : 0)}${armSuffix} × ${p.reps}`;
-  }
-  return `${p.reps} reps`;
+): { weight: string; reps: string } {
+  const reps = String(Math.max(1, adjust.reps));
+  const w = adjust.weightKg;
+  const weight =
+    w != null && w > 0 ? String(kgToDisplay(w, sys, isPerArm(ex) ? 1 : 0)) : "";
+  return { weight, reps };
 }
 
 /** Display-unit placeholders for the live set row inputs. */
 export function suggestionPlaceholders(
-  suggestion: ProgressionSuggestion,
+  adjust: CoachAdjustAction,
   ex: ExerciseDef,
   sys: UnitSystem,
 ): { weight: string; reps: string } {
-  const s = suggestion;
-  if (s.kind === "reps") {
-    const w = s.current.weightKg;
-    const weight =
-      ex.isBodyweight
-        ? w != null && w > 0
-          ? `+${kgToDisplay(w, sys, 0)}`
-          : "+0"
-        : w != null && w > 0
-          ? String(kgToDisplay(w, sys, 0))
-          : "—";
-    return { weight, reps: String(s.suggestReps) };
+  const { weight, reps } = adjustToDraftStrings(adjust, ex, sys);
+  if (ex.isBodyweight) {
+    return {
+      weight: weight ? `+${weight}` : "+0",
+      reps,
+    };
   }
-
-  const w = s.suggestWeightKg;
-  const weight =
-    ex.isBodyweight
-      ? w != null && w > 0
-        ? `+${kgToDisplay(w, sys, 0)}`
-        : "+0"
-      : w != null && w > 0
-        ? String(kgToDisplay(w, sys, 0))
-        : "—";
-  return { weight, reps: String(s.suggestReps) };
+  return { weight: weight || "—", reps };
 }

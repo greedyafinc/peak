@@ -190,9 +190,11 @@ export type PeakStore = UIState & {
   addLiveExercises: (exerciseIds: string[]) => void;
   removeLiveExercise: (liExId: string) => void;
   replaceLiveExercise: (liExId: string, newExerciseId: string) => void;
+  swapLiveExerciseKeepDone: (liExId: string, newExerciseId: string, pendingWeight?: string, pendingReps?: string) => void;
   addLiveSet: (liExId: string) => void;
   removeLiveSet: (liExId: string, setId: string) => void;
   setLiveSetField: (liExId: string, setId: string, field: "weight" | "reps" | "rpe", v: string) => void;
+  applyCoachToPendingSets: (liExId: string, weight: string, reps: string) => void;
   setLiveExerciseRest: (liExId: string, restSec: number) => void;
   toggleLiveSetDone: (liExId: string, setId: string) => void;
   setRest: (endsAtMs: number | null) => void;
@@ -534,6 +536,56 @@ export function PeakProvider({ children }: { children: ReactNode }) {
               : ex),
         })),
 
+      swapLiveExerciseKeepDone: (liExId, newExerciseId, pendingWeight = "", pendingReps = "") =>
+        mutateActive((a) => {
+          const idx = a.exercises.findIndex((ex) => ex.id === liExId);
+          if (idx < 0) return a;
+          const ex = a.exercises[idx];
+          const done = ex.sets.filter((st) => st.done);
+          const pending = ex.sets.filter((st) => !st.done);
+
+          if (done.length === 0) {
+            return {
+              ...a,
+              exercises: a.exercises.map((e) =>
+                e.id === liExId
+                  ? {
+                      ...e,
+                      exerciseId: newExerciseId,
+                      restSec: restFor(newExerciseId),
+                      sets: e.sets.map((st) => ({
+                        ...st,
+                        weight: pendingWeight,
+                        reps: pendingReps || st.reps,
+                      })),
+                    }
+                  : e,
+              ),
+            };
+          }
+
+          const trimmed: LiveExercise = { ...ex, sets: done };
+          const migratedPending =
+            pending.length > 0
+              ? pending.map((st) => ({
+                  ...st,
+                  weight: pendingWeight || st.weight,
+                  reps: pendingReps || st.reps,
+                  done: false,
+                }))
+              : [{ ...newLiveSet(ex.sets[0]?.targetRepLow, ex.sets[0]?.targetReps), weight: pendingWeight, reps: pendingReps }];
+          const newEx: LiveExercise = {
+            id: uid("lex"),
+            exerciseId: newExerciseId,
+            restSec: restFor(newExerciseId),
+            sets: migratedPending,
+          };
+          const next = [...a.exercises];
+          next[idx] = trimmed;
+          next.splice(idx + 1, 0, newEx);
+          return { ...a, exercises: next };
+        }),
+
       addLiveSet: (liExId) =>
         mutateActive((a) => ({
           ...a,
@@ -561,6 +613,16 @@ export function PeakProvider({ children }: { children: ReactNode }) {
             ex.id === liExId
               ? { ...ex, sets: ex.sets.map((st) => (st.id === setId ? { ...st, [field]: v } : st)) }
               : ex),
+        })),
+
+      applyCoachToPendingSets: (liExId, weight, reps) =>
+        mutateActive((a) => ({
+          ...a,
+          exercises: a.exercises.map((ex) =>
+            ex.id === liExId
+              ? { ...ex, sets: ex.sets.map((st) => (st.done ? st : { ...st, weight, reps })) }
+              : ex,
+          ),
         })),
 
       setLiveExerciseRest: (liExId, restSec) => {
