@@ -229,17 +229,36 @@ export function exerciseSubtitle(ex: ExerciseDef): string {
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
-/** Case-insensitive match across name, gym-nickname aliases, equipment, and muscle labels. */
+function normalizeSearchText(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b([a-z]+[^s])s\b/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Case-insensitive, punctuation-tolerant match across name, aliases, id, equipment, and muscle labels. */
 export function matchesQuery(ex: ExerciseDef, q: string): boolean {
-  const needle = q.trim().toLowerCase();
+  const needle = normalizeSearchText(q);
   if (!needle) return true;
+  const needleCompact = needle.replace(/\s+/g, "");
+  const needleTokens = needle.split(" ");
   const hay = [
+    ex.id,
     ex.name,
     ...(ex.aliases ?? []),
     equipmentLabel(ex.equipment),
     ...ex.primaryMuscles.map(muscleLabel),
-  ].join(" ").toLowerCase();
-  return hay.includes(needle);
+  ].map(normalizeSearchText).join(" ");
+  const hayCompact = hay.replace(/\s+/g, "");
+  return hay.includes(needle) ||
+    hayCompact.includes(needleCompact) ||
+    needleTokens.every((token) => hay.includes(token) || hayCompact.includes(token));
 }
 
 // ── Smart alternatives ────────────────────────────────────────────────────────
