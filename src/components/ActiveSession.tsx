@@ -32,6 +32,14 @@ const numOf = (s: string): number => {
   return Number.isFinite(n) ? n : 0;
 };
 const repsValidOf = (st: LiveSet): boolean => Math.floor(numOf(st.reps)) > 0;
+const clampRestSec = (sec: number): number => Number.isFinite(sec) ? Math.max(15, Math.min(600, Math.round(sec))) : TIMINGS.restDefaultSec;
+const fmtRestLabel = (sec: number): string => {
+  const s = clampRestSec(sec);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r === 0 ? `${m}m` : `${m}:${String(r).padStart(2, "0")}`;
+};
 
 // Per-exercise "last time" from session history (newest-first), for ghost hints.
 type Prev = { day: string; sets: { wKg: number | null; reps: number }[] };
@@ -147,11 +155,11 @@ export function ActiveSession() {
   );
   const canFinish = a.exercises.some((ex) => ex.sets.some((st) => st.done && repsValidOf(st)));
 
-  const onToggleDone = (liExId: string, st: LiveSet) => {
+  const onToggleDone = (liEx: LiveExercise, st: LiveSet) => {
     if (!st.done && !repsValidOf(st)) return;   // can't complete an empty set
     const becomingDone = !st.done;
-    s.toggleLiveSetDone(liExId, st.id);
-    if (becomingDone) s.setRest(Date.now() + TIMINGS.restDefaultSec * 1000);
+    s.toggleLiveSetDone(liEx.id, st.id);
+    if (becomingDone) s.setRest(Date.now() + clampRestSec(liEx.restSec ?? TIMINGS.restDefaultSec) * 1000);
   };
 
   const flashThenClear = (msg: string) => {
@@ -182,6 +190,7 @@ export function ActiveSession() {
         sets: Math.max(1, ex.sets.length),
         repLow: ex.sets[0]?.targetRepLow ?? undefined,
         repHigh: ex.sets[0]?.targetReps ?? undefined,
+        restSec: clampRestSec(ex.restSec ?? TIMINGS.restDefaultSec),
       })),
     });
     setMenuOpen(false);
@@ -264,7 +273,8 @@ export function ActiveSession() {
                 onAddSet={() => s.addLiveSet(ex.id)}
                 onRemoveSet={(setId) => s.removeLiveSet(ex.id, setId)}
                 onSetField={(setId, field, v) => s.setLiveSetField(ex.id, setId, field, v)}
-                onToggleDone={(st) => onToggleDone(ex.id, st)}
+                onRest={(sec) => s.setLiveExerciseRest(ex.id, sec)}
+                onToggleDone={(st) => onToggleDone(ex, st)}
               />
             ))}
             <button onClick={() => setPicker({ mode: "add" })}
@@ -373,7 +383,7 @@ function RestBtn({ label, onClick, fill }: { label: string; onClick: () => void;
 }
 
 function ExerciseCard({
-  liEx, sys, sessions, onSwap, onRemove, onAddSet, onRemoveSet, onSetField, onToggleDone,
+  liEx, sys, sessions, onSwap, onRemove, onAddSet, onRemoveSet, onSetField, onRest, onToggleDone,
 }: {
   liEx: LiveExercise;
   sys: UnitSystem;
@@ -383,6 +393,7 @@ function ExerciseCard({
   onAddSet: () => void;
   onRemoveSet: (setId: string) => void;
   onSetField: (setId: string, field: "weight" | "reps" | "rpe", v: string) => void;
+  onRest: (restSec: number) => void;
   onToggleDone: (st: LiveSet) => void;
 }) {
   const ex = EXERCISE_BY_ID[liEx.exerciseId];
@@ -390,6 +401,7 @@ function ExerciseCard({
   const wUnit = weightUnit(sys);
   const isBw = ex?.isBodyweight ?? false;
   const perArm = ex ? isPerArm(ex) : false;
+  const restSec = clampRestSec(liEx.restSec ?? TIMINGS.restDefaultSec);
 
   // For a bodyweight lift the weight cell is OPTIONAL added load (a belt/vest); a prior
   // "weight" is that added load, shown with a leading "+". Otherwise it's the lifted load.
@@ -438,6 +450,54 @@ function ExerciseCard({
         </button>
         <button onClick={onRemove} aria-label="Remove exercise"
           style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 19, lineHeight: 1, padding: "2px 2px" }}>×</button>
+      </div>
+
+      {/* Per-exercise rest preference; autosaves and drives the next completed-set timer. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "8px 10px", borderRadius: 10, background: C.inner, border: `1px solid ${C.line2}` }}>
+        <span style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700 }}>Rest</span>
+        <button
+          onClick={() => onRest(restSec - 15)}
+          aria-label="Shorter rest"
+          style={{ width: 28, height: 28, borderRadius: 8, cursor: "pointer", border: `1px solid ${C.line2}`, background: C.card, color: C.sub, fontSize: 16, lineHeight: 1, fontWeight: 700 }}
+        >
+          −
+        </button>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={15}
+          max={600}
+          step={15}
+          value={restSec}
+          aria-label="Rest seconds"
+          onChange={(e) => onRest(parseInt(e.target.value, 10))}
+          style={{ ...cellInput, width: 54, height: 30, padding: "4px 6px", textAlign: "center", fontFamily: mono, fontSize: 14, fontWeight: 800 }}
+        />
+        <span style={{ fontSize: 10, color: C.muted, fontFamily: mono }}>sec</span>
+        <button
+          onClick={() => onRest(restSec + 15)}
+          aria-label="Longer rest"
+          style={{ width: 28, height: 28, borderRadius: 8, cursor: "pointer", border: `1px solid ${C.line2}`, background: C.card, color: C.sub, fontSize: 16, lineHeight: 1, fontWeight: 700 }}
+        >
+          ＋
+        </button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {[60, 90, 120].map((sec) => (
+            <button
+              key={sec}
+              onClick={() => onRest(sec)}
+              aria-label={`Set rest to ${fmtRestLabel(sec)}`}
+              style={{
+                fontSize: 11, fontFamily: mono, fontWeight: 700, padding: "5px 8px", borderRadius: 8, cursor: "pointer",
+                border: `1px solid ${restSec === sec ? C.blue : C.line2}`,
+                background: restSec === sec ? `${C.blue}22` : C.card,
+                color: restSec === sec ? C.blue : C.muted,
+              }}
+            >
+              {fmtRestLabel(sec)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* column header — the weight unit is a live kg·lb toggle (lbs always available).

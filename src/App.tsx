@@ -14,6 +14,7 @@ import { ActiveSession, MiniSessionBar } from "./components/ActiveSession";
 import { ExerciseDetail } from "./components/ExerciseDetail";
 import { SessionDetail } from "./components/SessionDetail";
 import { SessionEditor } from "./components/SessionEditor";
+import { Recovery } from "./components/Recovery";
 
 function Screens() {
   const { tab, data } = usePeak();
@@ -49,6 +50,7 @@ function Shell() {
           <SessionDetail />
           <ExerciseDetail />
           <SessionEditor />
+          <Recovery />
         </div>
       </div>
     </div>

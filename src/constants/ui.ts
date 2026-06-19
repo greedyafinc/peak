@@ -13,6 +13,7 @@
 export const Z_INDEX = {
   miniBar: 48,         // minimized "resume workout" bar (ActiveSession)
   sheet: 70,           // bottom Sheet scrim (ui.tsx)
+  recovery: 75,        // full-page muscle recovery / readiness view (Recovery)
   sessionDetail: 76,   // logged-session detail page (SessionDetail)
   exerciseDetail: 78,  // exercise/effort detail page (ExerciseDetail)
   activeSession: 80,   // full-screen live workout (ActiveSession)

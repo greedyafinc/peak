@@ -6,6 +6,7 @@ import { uid } from "./utils/id";
 import { nowISO, localDayKey } from "./utils/date";
 import { reconcile, snapshotBuild } from "./data/migration";
 import { weightToKg, kgToDisplay } from "./units";
+import { TIMINGS } from "./constants/ui";
 import {
   recomputeAll,
   getHeadlineAndDimensions,
@@ -68,6 +69,7 @@ export type UIState = {
   exDetail: ExerciseDetailSpec | null;  // the full-screen exercise/effort detail (null = closed)
   sessionDetailId: string | null;    // the full-page logged-session detail (null = closed)
   sessionEditId: string | null;      // the full-page logged-session editor (null = closed)
+  recoveryOpen: boolean;             // the full-page muscle recovery / readiness view
 };
 
 const INITIAL_UI: UIState = {
@@ -88,6 +90,7 @@ const INITIAL_UI: UIState = {
   exDetail: null,
   sessionDetailId: null,
   sessionEditId: null,
+  recoveryOpen: false,
 };
 
 // ── Live Gym session (in-progress; draft strings in the active display unit) ──
@@ -106,6 +109,7 @@ export type LiveSet = {
 export type LiveExercise = {
   id: string;
   exerciseId: string;
+  restSec: number;
   sets: LiveSet[];
 };
 export type ActiveSession = {
@@ -189,6 +193,7 @@ export type PeakStore = UIState & {
   addLiveSet: (liExId: string) => void;
   removeLiveSet: (liExId: string, setId: string) => void;
   setLiveSetField: (liExId: string, setId: string, field: "weight" | "reps" | "rpe", v: string) => void;
+  setLiveExerciseRest: (liExId: string, restSec: number) => void;
   toggleLiveSetDone: (liExId: string, setId: string) => void;
   setRest: (endsAtMs: number | null) => void;
   setActiveTitle: (title: string) => void;
@@ -293,6 +298,10 @@ export function PeakProvider({ children }: { children: ReactNode }) {
       id: uid("lset"), weight: "", reps: "", rpe: "", done: false,
       targetRepLow: low ?? null, targetReps: high ?? null,
     });
+    const restFor = (exerciseId: string, fallback?: number | null): number => {
+      const n = fallback ?? dataRef.current.restPreferences?.[exerciseId] ?? TIMINGS.restDefaultSec;
+      return Number.isFinite(n) ? Math.max(15, Math.min(600, Math.round(n))) : TIMINGS.restDefaultSec;
+    };
     const repsOf = (st: LiveSet): number => Math.floor(parseFloat(st.reps) || 0);
 
     // Commit the in-progress session to a real Session via logSession (shared by
@@ -356,6 +365,7 @@ export function PeakProvider({ children }: { children: ReactNode }) {
           exercises = r.exercises.map((re) => ({
             id: uid("lex"),
             exerciseId: re.exerciseId,
+            restSec: restFor(re.exerciseId, re.restSec),
             sets: Array.from({ length: Math.max(1, re.sets) }, () => newLiveSet(re.repLow, re.repHigh)),
           }));
         }
@@ -506,7 +516,7 @@ export function PeakProvider({ children }: { children: ReactNode }) {
           ...a,
           exercises: [
             ...a.exercises,
-            ...ids.map((eid) => ({ id: uid("lex"), exerciseId: eid, sets: [newLiveSet()] })),
+            ...ids.map((eid) => ({ id: uid("lex"), exerciseId: eid, restSec: restFor(eid), sets: [newLiveSet()] })),
           ],
         })),
 
@@ -520,7 +530,7 @@ export function PeakProvider({ children }: { children: ReactNode }) {
             ex.id === liExId
               // Keep the set scaffold; clear the load (it differs for the new
               // movement) and the completion flag so nothing false is committed.
-              ? { ...ex, exerciseId: newExerciseId, sets: ex.sets.map((st) => ({ ...st, weight: "", done: false })) }
+              ? { ...ex, exerciseId: newExerciseId, restSec: restFor(newExerciseId), sets: ex.sets.map((st) => ({ ...st, weight: "", done: false })) }
               : ex),
         })),
 
@@ -552,6 +562,16 @@ export function PeakProvider({ children }: { children: ReactNode }) {
               ? { ...ex, sets: ex.sets.map((st) => (st.id === setId ? { ...st, [field]: v } : st)) }
               : ex),
         })),
+
+      setLiveExerciseRest: (liExId, restSec) => {
+        const sec = restFor("", restSec);
+        const exerciseId = activeRef.current?.exercises.find((ex) => ex.id === liExId)?.exerciseId;
+        mutateActive((a) => ({
+          ...a,
+          exercises: a.exercises.map((ex) => (ex.id === liExId ? { ...ex, restSec: sec } : ex)),
+        }));
+        if (exerciseId) update((d) => ({ ...d, restPreferences: { ...d.restPreferences, [exerciseId]: sec } }));
+      },
 
       toggleLiveSetDone: (liExId, setId) =>
         mutateActive((a) => ({
@@ -623,6 +643,7 @@ export function PeakProvider({ children }: { children: ReactNode }) {
           exercises: activeSession.exercises.map((ex) => ({
             exerciseId: ex.exerciseId,
             sets: Math.max(1, ex.sets.length),
+            restSec: restFor(ex.exerciseId, ex.restSec),
           })),
         };
         update((d) => ({ ...d, routines: [routine, ...d.routines] }));

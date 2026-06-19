@@ -41,14 +41,14 @@ export const glow = {
   box: (c: string, r = 14) => `0 0 ${r}px ${c}`,
 };
 
-// Strength → thermal color ramp (cold blue → hot red).
+// Strength → thermal color ramp (hot red = weaker → cold blue = stronger).
 export function heat(s: number): string {
-  if (s >= 88) return "#ff4d3d";
-  if (s >= 78) return "#ff8a3d";
-  if (s >= 66) return "#ffd23f";
-  if (s >= 52) return "#8fd14f";
-  if (s >= 38) return "#2fb89a";
-  return "#3f54a8";
+  if (s >= 88) return "#3f54a8";
+  if (s >= 78) return "#2fb89a";
+  if (s >= 66) return "#8fd14f";
+  if (s >= 52) return "#ffd23f";
+  if (s >= 38) return "#ff8a3d";
+  return "#ff4d3d";
 }
 
 import type { WorkoutType } from "./types";

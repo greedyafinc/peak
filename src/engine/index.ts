@@ -61,6 +61,8 @@ export type { DimensionRollup, SubcategoryRollup, Eligibility } from "./rollup";
 export { inferMuscleStrength } from "./infer";
 export { regionTrainingForGroup } from "./regions";
 export type { RegionTraining, RegionTrainingResult } from "./regions";
+export { computeRecovery, recoveryColor, soreness, RECOVERY } from "./recovery";
+export type { RecoverySnapshot, MuscleRecovery, Soreness } from "./recovery";
 export { computeConsistency } from "./consistency";
 export { computeWeekStatus, mondayIndex, planIsEmpty, EMPTY_WEEK_DAYS } from "./weeklyPlan";
 export type { WeekStatus, WeekDayStatus, DayKind } from "./weeklyPlan";

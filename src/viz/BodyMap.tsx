@@ -20,6 +20,7 @@ export function BodyMap({
   view,
   regionKey,
   regionScores,
+  colorFor,
 }: {
   muscles: BodyMuscle[];
   selected: string | null;
@@ -27,6 +28,7 @@ export function BodyMap({
   view: "front" | "back";
   regionKey?: string | null;                          // svg key whose bands show region emphasis
   regionScores?: Partial<Record<string, number>>;     // regionId → 0..100 heat (for regionKey)
+  colorFor?: (m: BodyMuscle) => string;               // override the score→color ramp (e.g. recovery)
 }) {
   const body = view === "front" ? FRONT : BACK;
 
@@ -39,7 +41,7 @@ export function BodyMap({
         const d = body.muscles[m.id];
         if (!d) return null;
 
-        const baseColor = m.untested ? C.untested : heat(m.score);
+        const baseColor = colorFor ? colorFor(m) : m.untested ? C.untested : heat(m.score);
         const isSel = selected === m.id;
         const dim = selected != null && !isSel;
         const filter = isSel

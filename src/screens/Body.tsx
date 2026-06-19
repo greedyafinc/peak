@@ -4,13 +4,15 @@
 import { useMemo } from "react";
 import { usePeak } from "../store";
 import { SCREEN_STYLE, contentPad } from "./layoutPresets";
-import { C, mono, heat, radius } from "../theme";
+import { C, mono, heat, radius, hexA } from "../theme";
 import {
   Card, TierBadge, StatTile, SectionHeader, Chip, PrimaryButton,
   ConfidenceMeter, PercentileBar, pctLabel, pct100, score100, tierForScore,
 } from "../components/ui";
-import { peakScoreFromPercentile, regionTrainingForGroup, type RegionTrainingResult } from "../engine";
+import { peakScoreFromPercentile, regionTrainingForGroup, computeRecovery, recoveryColor, type RegionTrainingResult, type RecoverySnapshot } from "../engine";
+import { nowISO } from "../utils/date";
 import { BodyMap, type BodyMuscle } from "../viz/BodyMap";
+import { ProgressRing } from "../viz/ProgressRing";
 import { SUBREGION_BANDS } from "../viz/bodyRegions";
 import { MUSCLE_TO_SVG, SVG_TO_MUSCLE } from "../data/muscleMap";
 import { groupHasSubRegions, REGION_BY_ID } from "../data/muscleRegions";
@@ -81,6 +83,9 @@ export function Body() {
 
   const regionShadeActive = !!(s.selMuscle && selRegionScores && SUBREGION_BANDS[s.selMuscle]);
 
+  // ── recovery teaser → full-page Recovery view ──────────────────────────────
+  const recovery = useMemo(() => computeRecovery(data, nowISO()), [data]);
+
   return (
     <div style={SCREEN_STYLE}>
       <div style={contentPad()}>
@@ -108,11 +113,11 @@ export function Body() {
             regionKey={s.selMuscle}
             regionScores={selRegionScores ?? undefined}
           />
-          <Legend />
+          <Legend mode={regionShadeActive ? "emphasis" : "strength"} />
           <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
             {regionShadeActive
-              ? `${selLabel} shaded by where you train it most — chest, abs, back and traps split into regions.`
-              : "Chest, abs, back and traps split into sub-regions. Tap a muscle to see where you train it most."}
+              ? `${selLabel} bands show where you train it most — brightest is your most-trained head, not your strongest.`
+              : "Muscles are shaded by strength. Chest, abs, back and traps split into sub-regions — tap one to see where you train it most."}
           </div>
         </Card>
       </div>
@@ -160,7 +165,7 @@ export function Body() {
               </div>
             )}
 
-            {regionTraining && <RegionEmphasis rt={regionTraining} muscle={selLabel ?? ""} />}
+            {regionTraining && <RegionEmphasis rt={regionTraining} muscle={selLabel ?? ""} regionScores={selRegionScores} />}
           </Card>
         </div>
       )}
@@ -190,36 +195,137 @@ export function Body() {
           </Card>
         </div>
       )}
+
+      {/* ── C) Recovery & readiness → full-page Recovery view ── */}
+      <div style={{ ...contentPad(), paddingTop: 22 }}>
+        <SectionHeader
+          kicker="Recovery · readiness"
+          title="Recovery"
+          sub="How recovered each muscle is right now, from the sets you've logged. Tap for the full readiness view."
+        />
+        <RecoveryWidget snap={recovery} onOpen={() => s.set({ recoveryOpen: true })} />
+      </div>
     </div>
   );
 }
 
+// ── Recovery widget (glanceable readiness summary → full-page Recovery view) ────
+// A self-contained dashboard tile: overall recovery ring, train/hold status, and the
+// muscles still on the clock — all from real logged sets. Taps through to Recovery.
+function RecoveryWidget({ snap, onOpen }: { snap: RecoverySnapshot; onOpen: () => void }) {
+  const overall = snap.overall;
+  const color = recoveryColor(100 - overall);
+  const status = !snap.anyRecentTraining
+    ? "Recovered"
+    : overall >= 75 ? "Primed" : overall >= 55 ? "Train light" : "Recover";
+  const recovering = snap.muscles.filter((m) => !m.ready).slice(0, 3);
+
+  return (
+    <Card onClick={onOpen} glow={color}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        {/* ring */}
+        <div style={{ position: "relative", width: 62, height: 62, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <ProgressRing pct={overall} color={color} size={62} strokeWidth={6} />
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ fontFamily: mono, fontSize: 17, fontWeight: 700, color, lineHeight: 1 }}>{overall}</span>
+            <span style={{ fontFamily: mono, fontSize: 7.5, letterSpacing: "0.8px", color: C.muted, textTransform: "uppercase", marginTop: 1 }}>rec</span>
+          </div>
+        </div>
+        {/* summary */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: C.ink, letterSpacing: "-0.3px" }}>Recovery &amp; readiness</span>
+            <span style={{ color: C.muted, fontSize: 18, fontWeight: 700, lineHeight: 1, flexShrink: 0 }}>›</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: hexA(color, 0.13), borderRadius: radius.xxl, padding: "3px 9px" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
+              <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", color }}>{status}</span>
+            </span>
+            <span style={{ fontSize: 12, color: C.sub }}>
+              {snap.anyRecentTraining ? `${snap.freshCount} fresh · ${snap.recoveringCount} recovering` : "Tap to start tracking"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* muscles still recovering (or an all-clear line) */}
+      <div style={{ borderTop: `1px solid ${C.line3}`, marginTop: 13, paddingTop: 12 }}>
+        {recovering.length > 0 ? (
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+            {recovering.map((m) => (
+              <span key={m.group} style={{ display: "inline-flex", alignItems: "center", gap: 7, background: C.inner, border: `1px solid ${C.line2}`, borderRadius: radius.xxl, padding: "5px 10px" }}>
+                <span style={{ width: 7, height: 7, borderRadius: 2, background: m.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.ink3 }}>{m.label}</span>
+                <span style={{ fontFamily: mono, fontSize: 10.5, fontWeight: 700, color: C.muted }}>{m.readyIn.replace("in ", "")}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.5 }}>
+            {snap.anyRecentTraining
+              ? "Every muscle is recovered — you're clear to train hard today."
+              : "Log a session and Peak tracks each muscle's recovery here."}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// Attributed set-volume → a readable count. A set splits across the regions it trains, so
+// this is fractional; show "<1 set" rather than rounding a real contribution down to zero.
+function fmtSets(v: number): string {
+  if (v <= 0) return "0 sets";
+  if (v < 1) return "<1 set";
+  const n = Math.round(v);
+  return `${n} set${n === 1 ? "" : "s"}`;
+}
+
 // ── Sub-region training emphasis (which heads of a muscle you actually train) ──
-function RegionEmphasis({ rt, muscle }: { rt: RegionTrainingResult; muscle: string }) {
+// Each row is color-matched to its band in the body map above (same heat ramp + `regionScores`),
+// so the chart and this breakdown read as one thing: the swatch/bar = training emphasis (brightest
+// = most-trained head), bar width = share of volume, and the count is attributed sets per head.
+function RegionEmphasis({ rt, muscle, regionScores }: {
+  rt: RegionTrainingResult;
+  muscle: string;
+  regionScores: Record<string, number> | null;
+}) {
   const trained = rt.totalSets > 0;
+  const maxShare = Math.max(rt.regions[0]?.share ?? 0, 1e-9); // regions sorted by share desc
   return (
     <div style={{ marginTop: 16, borderTop: `1px solid ${C.line2}`, paddingTop: 13 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
         <span style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.7px" }}>Sub-regions you train</span>
-        {trained && <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{Math.round(rt.totalSets)} sets</span>}
+        {trained && <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{Math.round(rt.totalSets)} sets total</span>}
       </div>
 
       {trained ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-          {rt.regions.map((r) => {
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {rt.regions.map((r, i) => {
             const pct = Math.round(r.share * 100);
+            // The same 0–100 intensity that colors this region's band in the map above.
+            const intensity = regionScores?.[r.region] ?? Math.round((r.share / maxShare) * 100);
+            const col = heat(intensity);
             return (
               <div key={r.region} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ width: 96, flexShrink: 0, fontSize: 12, color: C.ink3, fontWeight: 600 }}>{r.label}</span>
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: col, flexShrink: 0, opacity: r.share > 0 ? 1 : 0.4 }} />
+                <div style={{ width: 92, flexShrink: 0 }}>
+                  <div style={{ fontSize: 12, color: C.ink3, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                    {r.label}
+                    {i === 0 && <span style={{ fontSize: 9, color: C.muted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.4px" }}>most</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.muted, fontFamily: mono, marginTop: 1 }}>{fmtSets(r.sets)}</div>
+                </div>
                 <div style={{ flex: 1, height: 8, borderRadius: radius.sm, background: C.inner, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.max(pct, 2)}%`, height: "100%", background: C.accent, opacity: r.share > 0 ? 1 : 0.25, borderRadius: radius.sm }} />
+                  <div style={{ width: `${Math.max(pct, 2)}%`, height: "100%", background: col, opacity: r.share > 0 ? 1 : 0.3, borderRadius: radius.sm }} />
                 </div>
                 <span style={{ width: 34, flexShrink: 0, textAlign: "right", fontFamily: mono, fontSize: 11, color: r.share > 0 ? C.ink3 : C.muted }}>{pct}%</span>
               </div>
             );
           })}
           <div style={{ fontSize: 11, color: C.sub, marginTop: 3, lineHeight: 1.5 }}>
-            Share of your logged {muscle.toLowerCase()} volume by region — a low bar is a head you could train more.
+            Colors match the map above — brightest is your most-trained {muscle.toLowerCase()} head, not your strongest. A low bar is a head you could train more.
           </div>
         </div>
       ) : (
@@ -244,20 +350,27 @@ function RegionEmphasis({ rt, muscle }: { rt: RegionTrainingResult; muscle: stri
   );
 }
 
-// ── Weak → strong legend ──────────────────────────────────────────────────────
-function Legend() {
+// ── Heat-ramp legend — its meaning flips with selection: muscle STRENGTH by default,
+//    training EMPHASIS when one muscle's sub-region bands are shaded (§4.3). ──────
+function Legend({ mode }: { mode: "strength" | "emphasis" }) {
   const stops = [30, 45, 58, 72, 83, 92];
+  const lo = mode === "emphasis" ? "Trained less" : "Weak";
+  const hi = mode === "emphasis" ? "Trained most" : "Strong";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginTop: 8, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 10, color: C.muted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.6px" }}>Weak</span>
+      <span style={{ fontSize: 10, color: C.muted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.6px" }}>{lo}</span>
       <div style={{ display: "flex", borderRadius: 6, overflow: "hidden" }}>
         {stops.map((v) => (
           <div key={v} style={{ width: 22, height: 8, background: heat(v) }} />
         ))}
       </div>
-      <span style={{ fontSize: 10, color: C.muted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.6px" }}>Strong</span>
-      <span style={{ width: 11, height: 11, borderRadius: 3, background: "#23262d", marginLeft: 6 }} />
-      <span style={{ fontSize: 10, color: C.muted, fontFamily: mono }}>untested</span>
+      <span style={{ fontSize: 10, color: C.muted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.6px" }}>{hi}</span>
+      {mode === "strength" && (
+        <>
+          <span style={{ width: 11, height: 11, borderRadius: 3, background: "#23262d", marginLeft: 6 }} />
+          <span style={{ fontSize: 10, color: C.muted, fontFamily: mono }}>untested</span>
+        </>
+      )}
     </div>
   );
 }

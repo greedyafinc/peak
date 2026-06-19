@@ -381,6 +381,7 @@ export type RoutineExercise = {
   sets: number;                // suggested working-set count
   repLow?: number;             // suggested rep-range low
   repHigh?: number;            // suggested rep-range high
+  restSec?: number;            // preferred rest after each completed set
 };
 
 export type RoutineDef = {
@@ -635,6 +636,7 @@ export type PeakData = {
   biometric: BiometricProfile | null;
   sessions: Session[];
   routines: RoutineDef[];      // user-saved Gym templates (built-ins ship as data)
+  restPreferences: Record<string, number>; // exerciseId → preferred rest seconds
   weeklyPlan: WeeklyPlan | null;  // recurring weekly routine; null = not set up yet
   leafScores: Record<LeafId, LeafScore>;
   muscleEstimates: Partial<Record<MuscleGroup, MuscleGroupEstimate>>;
